@@ -28,6 +28,31 @@ TS3 MusicBot doesn't require you to be an admin on the server you are using the 
 <h4>Installation:</h4>
 Go to [Wiki](https://gitlab.com/Bettehem/ts3-musicbot/wikis/home) for instructions on installation.<br>
 <br>
+<h4>Using Docker:</h4>
+
+**1. Copy and edit the config file**
+```sh
+cp ts3-musicbot.config.example ts3-musicbot.config
+```
+Open `ts3-musicbot.config` and fill in your values (TeamSpeak server address, credentials, Spotify account, etc.).
+
+**2. Build and start the container**
+```sh
+docker compose up -d --build
+```
+
+**3. View logs**
+```sh
+docker compose logs -f
+```
+
+**4. Stop the bot**
+```sh
+docker compose down
+```
+
+> **Note:** The config file is mounted read-only into the container at `/home/botuser/bot/ts3-musicbot.config`. Any changes to `ts3-musicbot.config` require restarting the container (`docker compose restart`) to take effect.
+<br>
 <h4>Commands:</h4>
 
 - All commands start with the "%" character. You have to enter these in the chat of the channel your bot is connected to.<br>
