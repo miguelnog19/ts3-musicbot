@@ -1,0 +1,16 @@
+services:
+  ts3-musicbot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ts3-musicbot:latest
+    container_name: ts3-musicbot
+    restart: unless-stopped
+
+    volumes:
+      # Bot config file — create this on the host before starting
+      - ./ts3-musicbot.config:/home/botuser/bot/ts3-musicbot.config:ro
+
+    # The CMD in the Dockerfile already passes --config, so no override needed.
+    # To pass extra flags uncomment and edit:
+    # command: ["--config", "/home/botuser/bot/ts3-musicbot.config"]
