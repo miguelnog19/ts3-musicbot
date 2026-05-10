@@ -357,7 +357,7 @@ data class Link(
                     this@Link.link
                 }
 
-                ServiceType.OTHER -> ""
+                ServiceType.RADIO, ServiceType.OTHER -> ""
             }
         }
 

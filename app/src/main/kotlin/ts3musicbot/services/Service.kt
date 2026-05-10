@@ -24,6 +24,7 @@ enum class ServiceType {
     BANDCAMP,
     APPLE_MUSIC,
     SONGLINK,
+    RADIO,
     OTHER,
     ;
 
@@ -35,6 +36,7 @@ enum class ServiceType {
             BANDCAMP -> "Bandcamp"
             APPLE_MUSIC -> "Apple Music"
             SONGLINK -> "SongLink"
+            RADIO -> "Radio"
             else -> super.toString()
         }
 }
