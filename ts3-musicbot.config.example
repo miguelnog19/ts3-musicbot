@@ -1,0 +1,41 @@
+# TS3 MusicBot configuration
+# Rename/copy this file to ts3-musicbot.config and fill in your values.
+
+# TeamSpeak server address (required)
+SERVER_ADDRESS=myserver.com
+
+# TeamSpeak server password (leave empty if none)
+SERVER_PASSWORD=
+
+# TeamSpeak server port (leave empty to use default 9987)
+SERVER_PORT=
+
+# Channel the bot should join automatically.
+# Use / for sub-channels, e.g. Music/MusicBot
+CHANNEL_NAME=Music/MusicBot
+
+# Channel password (leave empty if none)
+CHANNEL_PASSWORD=
+
+# Path to a channel description file (leave empty if unused)
+CHANNEL_FILE_PATH=
+
+# Display name of the bot in TeamSpeak
+NICKNAME=MusicBot
+
+# Spotify market/region (ISO 3166-1 alpha-2 country code)
+MARKET=US
+
+# Spotify player backend: spotify | ncspot | spotifyd
+SPOTIFY_PLAYER=spotify
+
+# Spotify credentials (required when SPOTIFY_PLAYER=spotify or ncspot)
+SPOTIFY_USERNAME=myspotifyusername
+SPOTIFY_PASSWORD=myspotifypassword
+
+# Use the official TeamSpeak client (recommended: true)
+USE_OFFICIAL_TSCLIENT=true
+
+# Accept the TeamSpeak license agreement automatically.
+# Must be true when running headless/in Docker (no TTY available for interactive prompt).
+ACCEPT_TS_LICENSE=true
