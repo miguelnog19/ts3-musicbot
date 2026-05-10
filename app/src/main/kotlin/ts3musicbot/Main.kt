@@ -345,10 +345,11 @@ class Main :
                             scVolume,
                             ytVolume,
                             bcVolume,
-                            ytApiKey,
-                            spApiKey,
-                            spClientId,
-                            spClientSecret,
+                            radioVolume = BotSettings().radioVolume,
+                            ytApiKey = ytApiKey,
+                            spApiKey = spApiKey,
+                            spClientId = spClientId,
+                            spClientSecret = spClientSecret,
                         )
                     }
 
@@ -1194,10 +1195,11 @@ class Main :
             scVolumeEditText.text.ifEmpty { "${BotSettings().scVolume}" }.toInt(),
             ytVolumeEditText.text.ifEmpty { "${BotSettings().ytVolume}" }.toInt(),
             bcVolumeEditText.text.ifEmpty { "${BotSettings().bcVolume}" }.toInt(),
-            "",
-            "",
-            "",
-            "",
+            radioVolume = BotSettings().radioVolume,
+            ytApiKey = "",
+            spApiKey = "",
+            spClientId = "",
+            spClientSecret = "",
         )
 
     override fun onChatUpdated(update: ChatUpdate) {

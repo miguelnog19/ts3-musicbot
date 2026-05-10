@@ -50,6 +50,9 @@ data class CommandList(
             Pair("sc-stop", "%sc-stop"),
             Pair("sc-playsong", "%sc-playsong"),
             Pair("sc-nowplaying", "%sc-nowplaying"),
+            Pair("radio-play", "%radio-play"),
+            Pair("radio-stop", "%radio-stop"),
+            Pair("radio-nowplaying", "%radio-nowplaying"),
         ).toMutableMap(),
 ) {
     var helpMessages = createHelpMessages()
@@ -114,7 +117,12 @@ data class CommandList(
                     "${commandList["sc-play"]}                     -Resumes the SoundCloud playback\n" +
                     "${commandList["sc-stop"]}                     -Stops the SoundCloud playback\n" +
                     "${commandList["sc-playsong"]} <link>          -Plays a SoundCloud song based on link\n" +
-                    "${commandList["sc-nowplaying"]}               -Shows information on currently playing track\n",
+                    "${commandList["sc-nowplaying"]}               -Shows information on currently playing track\n" +
+                    "\n" +
+                    "Radio commands:\n" +
+                    "${commandList["radio-play"]} <url> [-n <name>]  -Plays a radio stream from the given URL. Optionally provide a station name with -n.\n" +
+                    "${commandList["radio-stop"]}                    -Stops radio playback\n" +
+                    "${commandList["radio-nowplaying"]}              -Shows the currently playing radio station\n",
             ),
             Pair(
                 "queue-add",
@@ -557,6 +565,31 @@ data class CommandList(
                 "\n" +
                     "Showing help for ${commandList["sc-nowplaying"]} command:\n" +
                     "${commandList["sc-playsong"]} returns information on the currently playing SoundCloud track.",
+            ),
+            Pair(
+                "radio-play",
+                "\n" +
+                    "Showing help for ${commandList["radio-play"]} command:\n" +
+                    "${commandList["radio-play"]} plays a radio stream (Icecast/Shoutcast/any direct audio HTTP stream) using mpv.\n" +
+                    "The queue is stopped before playback begins. The stream plays indefinitely until you run ${commandList["radio-stop"]}.\n" +
+                    "Options:\n" +
+                    "-n <name>  Give the station a friendly name (used by ${commandList["radio-nowplaying"]}).\n" +
+                    "Example - play an Icecast stream:\n" +
+                    "${commandList["radio-play"]} http://stream.example.com:8000/radio.mp3\n" +
+                    "Example - play with a station name:\n" +
+                    "${commandList["radio-play"]} -n \"My Favourite Radio\" http://stream.example.com:8000/radio.mp3",
+            ),
+            Pair(
+                "radio-stop",
+                "\n" +
+                    "Showing help for ${commandList["radio-stop"]} command:\n" +
+                    "${commandList["radio-stop"]} stops the currently playing radio stream.",
+            ),
+            Pair(
+                "radio-nowplaying",
+                "\n" +
+                    "Showing help for ${commandList["radio-nowplaying"]} command:\n" +
+                    "${commandList["radio-nowplaying"]} shows the URL and name of the currently playing radio station.",
             ),
         )
 

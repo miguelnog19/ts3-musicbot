@@ -56,6 +56,8 @@ class ChatReader(
     private val songLink = SongLink(spotify, soundCloud, youTube, bandcamp, appleMusic, botSettings)
     private val voteSkipUsers = ArrayList<Pair<String, Boolean>>()
     private val trackCache = ArrayList<Pair<Link, TrackList>>()
+    // url to name — empty name means the URL itself is displayed
+    private var currentRadioStation: Pair<String, String> = Pair("", "")
     var latestMsgUsername = ""
 
     @Volatile
@@ -543,7 +545,7 @@ class ChatReader(
                                             ServiceType.BANDCAMP -> bandcamp
                                             ServiceType.SONGLINK -> songLink
                                             ServiceType.APPLE_MUSIC -> appleMusic
-                                            ServiceType.OTHER -> Service()
+                                            ServiceType.RADIO, ServiceType.OTHER -> Service()
                                         }
 
                                     val service = rawLink.getService()
@@ -2497,6 +2499,78 @@ class ChatReader(
                                     println("Failed to fetch metadata!\n${metadata.errorText}")
                                     commandJob.complete()
                                     return Pair(true, metadata.errorText)
+                                }
+                            }
+                            // radio-play command
+                            commandString.contains("^${cmdList.commandList["radio-play"]}\\s+".toRegex()) -> {
+                                val args = commandString.substringAfter("${cmdList.commandList["radio-play"]} ")
+                                val stationName =
+                                    if (args.contains("-n\\s+".toRegex())) {
+                                        args
+                                            .replace("^.*-n\\s+".toRegex(), "")
+                                            .replace("\\s+(\\[URL])?https?://.*$".toRegex(), "")
+                                            .replace("(^\"|\"$)".toRegex(), "")
+                                            .trim()
+                                    } else {
+                                        ""
+                                    }
+                                val url =
+                                    removeTags(args)
+                                        .split("\\s+".toRegex())
+                                        .firstOrNull { it.contains("^https?://".toRegex()) }
+                                        .orEmpty()
+                                if (url.isNotEmpty()) {
+                                    // stop queue if playing
+                                    if (songQueue.getState() != SongQueue.State.QUEUE_STOPPED) {
+                                        songQueue.stopQueue()
+                                    }
+                                    // kill any running mpv instance
+                                    commandRunner.runCommand("pkill -9 mpv", ignoreOutput = true)
+                                    currentRadioStation = Pair(url, stationName)
+                                    val displayName = stationName.ifEmpty { url }
+                                    launch {
+                                        commandRunner.runCommand(
+                                            "mpv --terminal=no --no-video --no-ytdl \"$url\" --volume=${botSettings.radioVolume}",
+                                            inheritIO = true,
+                                            ignoreOutput = true,
+                                            printCommand = true,
+                                        )
+                                    }
+                                    printToChat(listOf("Now playing radio: $displayName"))
+                                    commandListener.onCommandExecuted(commandString, "Playing radio: $displayName", url)
+                                    commandJob.complete()
+                                    return Pair(true, url)
+                                } else {
+                                    printToChat(listOf("Please provide a valid radio stream URL."))
+                                    commandJob.complete()
+                                    return Pair(false, null)
+                                }
+                            }
+                            // radio-stop command
+                            commandString.contains("^${cmdList.commandList["radio-stop"]}$".toRegex()) -> {
+                                commandRunner.runCommand("pkill -9 mpv", ignoreOutput = true)
+                                currentRadioStation = Pair("", "")
+                                printToChat(listOf("Radio stopped."))
+                                commandListener.onCommandExecuted(commandString, "Radio stopped.")
+                                commandJob.complete()
+                                return Pair(true, null)
+                            }
+                            // radio-nowplaying command
+                            commandString.contains("^${cmdList.commandList["radio-nowplaying"]}$".toRegex()) -> {
+                                val (url, name) = currentRadioStation
+                                if (url.isNotEmpty()) {
+                                    val msg =
+                                        "Now playing radio:\n" +
+                                            (if (name.isNotEmpty()) "Station: $name\n" else "") +
+                                            "URL: $url"
+                                    printToChat(listOf(msg))
+                                    commandListener.onCommandExecuted(commandString, msg, currentRadioStation)
+                                    commandJob.complete()
+                                    return Pair(true, currentRadioStation)
+                                } else {
+                                    printToChat(listOf("No radio station is currently playing."))
+                                    commandJob.complete()
+                                    return Pair(false, null)
                                 }
                             }
 
