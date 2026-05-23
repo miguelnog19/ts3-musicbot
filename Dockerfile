@@ -1,9 +1,9 @@
 # ── Build stage ──────────────────────────────────────────────────────────────
-FROM gradle:8.5-jdk11 AS builder
+FROM gradle:8.5-jdk17 AS builder
 
 WORKDIR /build
 COPY . .
-RUN chmod +x gradlew && ./gradlew shadowJar --no-daemon
+RUN sed -i 's/\r//' gradlew && chmod +x gradlew && ./gradlew shadowJar --no-daemon
 
 # ── Runtime stage (Arch Linux) ────────────────────────────────────────────────
 FROM archlinux:latest

@@ -1,9 +1,9 @@
 services:
   ts3-musicbot:
+    image: forgejo.lykion.ovh/lykion/ts3-musicbot:latest
     build:
       context: .
       dockerfile: Dockerfile
-    image: ts3-musicbot:latest
     container_name: ts3-musicbot
     restart: unless-stopped
 
