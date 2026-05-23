@@ -1,12 +1,11 @@
-import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     application
-    kotlin("jvm") version "1.9.22"
+    kotlin("jvm") version "2.3.21"
     id("org.openjfx.javafxplugin") version "0.1.0"
-    id("com.github.johnrengelman.shadow") version "7.1.2"
-    id("org.jmailen.kotlinter") version "4.3.0"
+    id("com.gradleup.shadow") version "9.4.1"
+    id("org.jmailen.kotlinter") version "5.4.2"
     id("java")
 }
 
@@ -15,45 +14,39 @@ version = "master"
 
 repositories {
     mavenCentral()
+    gradlePluginPortal()
     maven(url = "https://jitpack.io")
 }
 
 dependencies {
     testImplementation(kotlin("test"))
-    implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.10")
     implementation(platform("org.jetbrains.kotlin:kotlin-bom"))
-    testImplementation("org.jetbrains.kotlin:kotlin-test")
-
-    implementation("org.json:json:20230227")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.6.3-native-mt")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-javafx:1.6.3-native-mt")
+    implementation("org.json:json:20251224")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.11.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-javafx:1.11.0")
     implementation("com.github.bettehem:ts3j:1.0.21")
-    implementation("org.openjfx:javafx-controls:17")
+    implementation("org.openjfx:javafx-controls:11")
 }
 
 tasks.test {
     useJUnitPlatform()
 }
 kotlin {
+    compilerOptions {
+        jvmTarget = JvmTarget.JVM_11
+    }
     jvmToolchain(11)
 }
+
 // JavaFX modules to include
 javafx {
-    version = "17"
-    modules = listOf("javafx.controls")
+    version = "11"
+    modules("javafx.controls")
 }
 
 application {
     // Define the main class for the application.
     mainClass = "ts3musicbot.Main"
-}
-val compileKotlin: KotlinCompile by tasks
-compileKotlin.kotlinOptions {
-    jvmTarget = "11"
-}
-val compileTestKotlin: KotlinCompile by tasks
-compileTestKotlin.kotlinOptions {
-    jvmTarget = "11"
 }
 
 java {
@@ -61,13 +54,20 @@ java {
     targetCompatibility = JavaVersion.VERSION_11
 }
 
-tasks.withType<ShadowJar> {
+tasks.shadowJar {
     archiveBaseName.set("ts3-musicbot")
     archiveFileName.set("ts3-musicbot.jar")
     mergeServiceFiles()
     minimize()
     manifest {
         attributes(mapOf("Main-Class" to application.mainClass))
+    }
+    dependencies {
+        include(dependency("org.jetbrains.kotlin:kotlin-stdlib:2.3.21"))
+        include(dependency("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.11.0"))
+        include(dependency("org.jetbrains.kotlinx:kotlinx-coroutines-javafx:1.11.0"))
+        include(dependency("org.json:json:20251224"))
+        include(dependency("com.github.bettehem:ts3j:1.0.21"))
     }
 }
 

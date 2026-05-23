@@ -9,7 +9,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import ts3musicbot.client.OfficialTSClient
 import ts3musicbot.services.Bandcamp
-import ts3musicbot.services.Service
 import ts3musicbot.services.ServiceType
 import ts3musicbot.services.SoundCloud
 import ts3musicbot.services.Spotify
@@ -17,6 +16,8 @@ import ts3musicbot.services.YouTube
 import java.io.File
 import java.util.Collections
 import kotlin.collections.ArrayList
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 private var songQueue = Collections.synchronizedList(ArrayList<Track>())
 
@@ -231,7 +232,7 @@ class SongQueue(
                     if (getQueue().isNotEmpty()) {
                         println("Skipping current track.")
                         stopQueue()
-                        delay(1000)
+                        delay(1.seconds)
                         playNext()
                     } else {
                         println("Track cannot be skipped.")
@@ -417,9 +418,9 @@ class SongQueue(
         fun currentUrl(): String {
             val metadata = playerctl(getPlayer(), "metadata")
             return if (metadata.errorText.isEmpty()) {
-                metadata.ifOutputTextNotEmpty {
-                    it.lines()
-                        .first { it.contains("xesam:url") }.orEmpty()
+                metadata.ifOutputTextNotEmpty { text ->
+                    text.lines()
+                        .first { it.contains("xesam:url") }
                         .replace("(^.+\\s+\"?|\"?$)".toRegex(), "")
                 }
             } else {
@@ -440,7 +441,7 @@ class SongQueue(
                         .first { it.contains("mpris:length") }
                         .replace("^.+\\s+".toRegex(), "")
                         .toLong()
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     // track hasn't started
                     0L
                 }
@@ -483,9 +484,13 @@ class SongQueue(
                         commandRunner.runCommand("pkill -9 ncspot")
                         commandRunner.runCommand("tmux kill-session -t ncspot", ignoreOutput = true)
                     }
-
+                    "spotify_player" -> {
+                        playerctl(player, "stop")
+                        commandRunner.runCommand("pkill -9 spotify_player")
+                        commandRunner.runCommand("tmux kill-session -t spotify_player", ignoreOutput = true)
+                    }
                     "spotifyd" -> commandRunner.runCommand("echo \"$player isn't well supported yet, please kill it manually.\"")
-                    else -> commandRunner.runCommand("echo \"$player is not a supported player!\" > /dev/stderr; return 2")
+                    else -> commandRunner.runCommand("echo \"$player is not a supported player, please kill it manually!\" > /dev/stderr; return 2")
                 }
             }
         }
@@ -515,7 +520,7 @@ class SongQueue(
 
             suspend fun startSpotifyPlayer(shouldSetPrefs: Boolean = true) {
                 fun startCommand() =
-                    when (botSettings.spotifyPlayer) {
+                    when (val player = botSettings.spotifyPlayer) {
                         "spotify" ->
                             commandRunner.runCommand(
                                 "xvfb-run -a spotify --no-zygote --disable-gpu" +
@@ -529,9 +534,9 @@ class SongQueue(
                                 inheritIO = true,
                             )
 
-                        "ncspot" ->
+                        "ncspot", "spotify_player" ->
                             commandRunner.runCommand(
-                                "tmux new -s ncspot -n player -d; tmux send-keys -t ncspot \"ncspot\" Enter",
+                                "tmux new -s $player -n player -d; tmux send-keys -t $player '$player'; sleep 1; tmux send-keys -t $player 'Enter'",
                                 ignoreOutput = true,
                                 printCommand = true,
                             )
@@ -546,23 +551,28 @@ class SongQueue(
                 // starts the player
                 suspend fun startPlayer() {
                     startCommand()
-                    delay(3000)
+                    delay(3.seconds)
 
                     // sometimes the spotify player has problems starting, so ensure it actually starts.
                     println()
                     var attempts = 0
+                    val player = getPlayer()
+                    val maxAttempts = when (player) {
+                        "spotify", "mpv" -> 20
+                        else -> 300
+                    }
                     while (!processRunning()) {
-                        if (attempts < 20) {
+                        if (attempts < maxAttempts) {
                             print("\rWaiting for ${getPlayer()} to start${".".repeat(attempts / 2)}")
-                            delay(1000)
+                            delay(1.seconds)
                             attempts++
                         } else {
                             println("\nTrying again.")
                             attempts = 0
                             killPlayer(getPlayer())
-                            delay(1000)
+                            delay(1.seconds)
                             startCommand()
-                            delay(2000)
+                            delay(2.seconds)
                         }
                     }
                     println()
@@ -571,7 +581,7 @@ class SongQueue(
                 // restarts the player
                 suspend fun restartPlayer() {
                     killPlayer(getPlayer())
-                    delay(100)
+                    delay(100.milliseconds)
                     startPlayer()
                 }
 
@@ -630,7 +640,9 @@ class SongQueue(
                                             newPrefs.appendLine("${it.key}=${it.value}")
                                         }
                                         prefsFile.delete()
-                                        runBlocking { prefsFile.createNewFile() }
+                                        withContext(IO) {
+                                            prefsFile.createNewFile()
+                                        }
                                         prefsFile.writeText(newPrefs.toString())
                                     }
                                 }
@@ -690,7 +702,9 @@ class SongQueue(
                                     configFile.delete()
                                 }
 
-                                runBlocking { configFile.createNewFile() }
+                                withContext(IO) {
+                                    configFile.createNewFile()
+                                }
                                 configFile.writeText(newConfig.toString())
                             }
                         }
@@ -737,7 +751,7 @@ class SongQueue(
                                     skipTrack()
                                 }
                             }
-                            delay(500)
+                            delay(500.milliseconds)
                         }
                     }
                 }
@@ -753,12 +767,12 @@ class SongQueue(
                         var waitTime = 0
                         while (!processRunning()) {
                             if (waitTime < 10) {
-                                delay(1000)
+                                delay(1.seconds)
                                 waitTime++
                             } else {
                                 waitTime = 0
                                 startSpotifyPlayer()
-                                delay(1000)
+                                delay(1.seconds)
                             }
                         }
                         var attempts = 0
@@ -771,7 +785,7 @@ class SongQueue(
                             print("\rWaiting for the player to get ready for playback" + ".".repeat(dots))
                             if (dots < 120) {
                                 dots++
-                                delay(1000)
+                                delay(1.seconds)
                             } else {
                                 // TODO: Figure out something sensible to do here
                                 print("\nThe player really seems to be stuck, but proceeding anyway...")
@@ -779,7 +793,7 @@ class SongQueue(
                             }
                         }
                         if (shouldDelay) {
-                            delay(3000)
+                            delay(3.seconds)
                         }
                         println()
                         println("Trying to play track \"${track.link}\" using $player as the player.")
@@ -801,9 +815,9 @@ class SongQueue(
                                             track.link.getId(),
                                     )
                                     attempts++
-                                    delay(500)
+                                    delay(500.milliseconds)
                                     if (playerStatus().outputText != "Playing") {
-                                        delay(3500)
+                                        delay(3500.milliseconds)
                                     }
                                 } else {
                                     println("The player may be stuck, trying to start it again.")
@@ -826,21 +840,19 @@ class SongQueue(
                     ServiceType.YOUTUBE, ServiceType.SOUNDCLOUD, ServiceType.BANDCAMP -> {
                         suspend fun startMPV(job: Job) {
                             val volume: Int
-                            var service = Service()
-                            when (type) {
+                            val service = when (type) {
                                 ServiceType.SOUNDCLOUD -> {
                                     volume = botSettings.scVolume
-                                    service = soundCloud
+                                    soundCloud
                                 }
                                 ServiceType.YOUTUBE -> {
                                     volume = botSettings.ytVolume
-                                    service = youTube
+                                    youTube
                                 }
                                 ServiceType.BANDCAMP -> {
                                     volume = botSettings.bcVolume
-                                    service = bandcamp
+                                    bandcamp
                                 }
-                                else -> volume = 100
                             }
 
                             val mpvRunnable =
@@ -868,14 +880,14 @@ class SongQueue(
                                         println("Waiting for ${getPlayer()} to start.")
                                         // if playback hasn't started after twenty seconds, try starting playback again.
                                         if (attempts < 20) {
-                                            delay(1000)
+                                            delay(1.seconds)
                                             attempts++
                                         } else {
                                             println("The player may be stuck, trying to start it again.")
                                             attempts = 0
                                             playingAttempts++
                                             killPlayer("mpv")
-                                            delay(1000)
+                                            delay(1.seconds)
                                             mpvRunnable.run()
                                         }
                                     } else {
@@ -893,18 +905,18 @@ class SongQueue(
 
                         var currentJob = Job()
                         startMPV(currentJob)
-                        delay(7000)
+                        delay(7.seconds)
                         var attempts = 0
                         while (!playerStatus().outputText.contains("Playing")) {
                             println("Waiting for track to start playing")
-                            delay(1000)
+                            delay(1.seconds)
                             if (attempts < 10) {
-                                delay(1000)
+                                delay(1.seconds)
                                 attempts++
                             } else {
                                 attempts = 0
                                 currentJob.cancel()
-                                delay(1000)
+                                delay(1.seconds)
                                 currentJob = Job()
                                 startMPV(currentJob)
                             }
@@ -937,7 +949,7 @@ class SongQueue(
                                     // wait for ad to finish
                                     if (!currentUrl().startsWith("https://open.spotify.com/ad/")) {
                                         // wait for a couple seconds in case another ad starts playing
-                                        delay(2000)
+                                        delay(2.seconds)
                                         if (!currentUrl().startsWith("https://open.spotify.com/ad/")) {
                                             trackLength = getTrackLength()
                                         }
@@ -976,7 +988,7 @@ class SongQueue(
                                         }
                                     }
                                     listener.onTrackStarted(getPlayer(), track)
-                                    delay(2000)
+                                    delay(2.seconds)
                                 }
                             }
 
@@ -986,7 +998,7 @@ class SongQueue(
                                         // Song ended
                                         // Spotify changes playback status to "Paused" right before the song actually ends,
                                         // so wait for a brief moment so the song has a chance to end properly.
-                                        delay(1495)
+                                        delay(1495.milliseconds)
                                         skipTrack()
                                         break@loop
                                     } else if (!wasPaused) {
@@ -1013,7 +1025,7 @@ class SongQueue(
                                     break@loop
                                 } else {
                                     // wait a bit to see if track is actually stopped
-                                    delay(3000)
+                                    delay(3.seconds)
                                     if (playerStatus().outputText.contains("Stopped")) {
                                         println("\nThe current track seems to be stopped even though it hasn't played to the end.")
                                         // This probably means the user didn't manually stop the player and instead some player-related error
@@ -1054,7 +1066,7 @@ class SongQueue(
                             break@loop
                         }
                     }
-                    delay(995)
+                    delay(995.milliseconds)
                 }
             }
 
@@ -1072,7 +1084,7 @@ class SongQueue(
                     // Although this shouldn't be needed, at least in the case of the official spotify client,
                     // sometimes it won't respect the disabled autoplay setting, and will continue playing something else
                     // after the desired track has finished.
-                    if (botSettings.spotifyPlayer != "ncspot") {
+                    if (botSettings.spotifyPlayer == "spotify") {
                         killPlayer(botSettings.spotifyPlayer)
                     }
                     CoroutineScope(IO + synchronized(trackJob) { trackJob }).launch {

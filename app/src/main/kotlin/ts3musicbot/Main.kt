@@ -89,6 +89,7 @@ class Main :
     private var spotifyPlayerRadioGroup = ToggleGroup()
     private var spotifyRadioButton = RadioButton()
     private var ncspotRadioButton = RadioButton()
+    private var spotifyPlayerRadioButton = RadioButton()
     private var spotifydRadioButton = RadioButton()
     private var enterSpUsernameTextView = Label()
     private var spUsernameEditText = TextField()
@@ -158,7 +159,7 @@ class Main :
                         "You also need to provide    the channel name with -c option.\n" +
                         "-n, --nickname              The nickname of the bot.\n" +
                         "-m, --market                Specify a market/country for Spotify.\n" +
-                        "--spotify <client>          Specify a spotify client to use. Can be spotify, ncspot or spotifyd.\n" +
+                        "--spotify <client>          Specify a spotify client to use. Can be spotify, ncspot, spotify_player or spotifyd.\n" +
                         "--sp-user <username>        Specify the username to use in the official spotify client.\n" +
                         "--sp-pass <password>        Specify the password to use in the official spotify client.\n" +
                         "--config                    Provide a config file where to read the bot's settings from.\n" +
@@ -399,7 +400,9 @@ class Main :
                                         },
                                         officialTSClient,
                                     )
-                                console.startConsole()
+                                CoroutineScope(IO).launch {
+                                    console.startConsole()
+                                }
                             } else {
                                 print("Error: Bot wasn't able start reading the chat!")
                             }
@@ -445,7 +448,9 @@ class Main :
                                     },
                                     teamSpeak,
                                 )
-                            console.startConsole()
+                            CoroutineScope(IO).launch {
+                                console.startConsole()
+                            }
                         } else {
                             print("Error: Bot wasn't able to start reading the chat!")
                         }
@@ -713,13 +718,16 @@ class Main :
 
         browseChannelFileButton.text = "Browse channel file"
 
-        selectSpotifyPlayerTextView.text = "Select Spotify player (ncspot and spotifyd require Spotify Premium)"
+        selectSpotifyPlayerTextView.text = "Select Spotify player (ncspot, spotify_player and spotifyd require Spotify Premium)"
         spotifyRadioButton.text = "Spotify"
         spotifyRadioButton.toggleGroup = spotifyPlayerRadioGroup
         spotifyRadioButton.isSelected = true
         ncspotRadioButton.text = "ncspot"
         ncspotRadioButton.toggleGroup = spotifyPlayerRadioGroup
         ncspotRadioButton.isSelected = false
+        spotifyPlayerRadioButton.text = "spotify_player"
+        spotifyPlayerRadioButton.toggleGroup = spotifyPlayerRadioGroup
+        spotifyPlayerRadioButton.isSelected = false
         spotifydRadioButton.text = "Spotifyd"
         spotifydRadioButton.toggleGroup = spotifyPlayerRadioGroup
         spotifydRadioButton.isSelected = false
@@ -727,6 +735,7 @@ class Main :
             when (spotifyPlayerRadioGroup.selectedToggle) {
                 spotifyRadioButton -> settings.spotifyPlayer = "spotify"
                 ncspotRadioButton -> settings.spotifyPlayer = "ncspot"
+                spotifyPlayerRadioButton -> settings.spotifyPlayer = "spotify_player"
                 spotifydRadioButton -> settings.spotifyPlayer = "spotifyd"
             }
             if (spotifyPlayerRadioGroup.selectedToggle == spotifyRadioButton) {
@@ -834,10 +843,12 @@ class Main :
         selectSpotifyPlayerTextView.isVisible = showAdvanced
         spotifyRadioButton.isVisible = showAdvanced
         ncspotRadioButton.isVisible = showAdvanced
+        spotifyPlayerRadioButton.isVisible = showAdvanced
         spotifydRadioButton.isVisible = showAdvanced
         selectSpotifyPlayerTextView.isManaged = showAdvanced
         spotifyRadioButton.isManaged = showAdvanced
         ncspotRadioButton.isManaged = showAdvanced
+        spotifyPlayerRadioButton.isManaged = showAdvanced
         spotifydRadioButton.isManaged = showAdvanced
         enterSpUsernameTextView.isVisible = showAdvanced
         enterSpPasswordTextView.isManaged = showAdvanced
@@ -915,6 +926,7 @@ class Main :
             selectSpotifyPlayerTextView,
             spotifyRadioButton,
             ncspotRadioButton,
+            spotifyPlayerRadioButton,
             spotifydRadioButton,
             enterSpUsernameTextView,
             spUsernameEditText,
@@ -998,18 +1010,28 @@ class Main :
                         "spotify" -> {
                             spotifyRadioButton.isSelected = true
                             ncspotRadioButton.isSelected = false
+                            spotifyPlayerRadioButton.isSelected = false
                             spotifydRadioButton.isSelected = false
                         }
 
                         "ncspot" -> {
                             spotifyRadioButton.isSelected = false
                             ncspotRadioButton.isSelected = true
+                            spotifyPlayerRadioButton.isSelected = false
+                            spotifydRadioButton.isSelected = false
+                        }
+
+                        "spotify_player" -> {
+                            spotifyRadioButton.isSelected = false
+                            ncspotRadioButton.isSelected = false
+                            spotifyPlayerRadioButton.isSelected = true
                             spotifydRadioButton.isSelected = false
                         }
 
                         "spotifyd" -> {
                             spotifyRadioButton.isSelected = false
                             ncspotRadioButton.isSelected = false
+                            spotifyPlayerRadioButton.isSelected = false
                             spotifydRadioButton.isSelected = true
                         }
                     }
@@ -1158,7 +1180,7 @@ class Main :
                     teamSpeak.disconnect()
                 }
                 commandRunner.runCommand(
-                    "pkill mpv; pkill ncspot; tmux kill-session -t ncspot",
+                    "pkill mpv; pkill ncspot; pkill spotify_player; tmux kill-session -t ncspot; tmux kill-session -t spotify_player",
                     ignoreOutput = true,
                 )
                 statusTextView.text = "Status: Bot not active."
@@ -1185,6 +1207,7 @@ class Main :
             when (spotifyPlayerRadioGroup.selectedToggle) {
                 spotifyRadioButton -> "spotify"
                 ncspotRadioButton -> "ncspot"
+                spotifyPlayerRadioButton -> "spotify_player"
                 spotifydRadioButton -> "spotifyd"
                 else -> BotSettings().spotifyPlayer
             },

@@ -24,6 +24,7 @@ import ts3musicbot.services.SongLink
 import ts3musicbot.services.SoundCloud
 import ts3musicbot.services.Spotify
 import ts3musicbot.services.YouTube
+import ts3musicbot.services.Lyrics
 import ts3musicbot.util.BotSettings
 import ts3musicbot.util.CommandList
 import ts3musicbot.util.CommandRunner
@@ -38,6 +39,8 @@ import ts3musicbot.util.SongQueue
 import ts3musicbot.util.Track
 import ts3musicbot.util.TrackList
 import ts3musicbot.util.playerctl
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 class ChatReader(
     private val client: Client,
@@ -80,7 +83,7 @@ class ChatReader(
             is OfficialTSClient -> {
                 when (client.channelFile.extension) {
                     "txt" -> {
-                        text.replace("\\[/?URL]|,(\$|\\s)".toRegex(), "")
+                        text.replace("\\[/?URL]|,($|\\s)".toRegex(), "")
                     }
 
                     else -> {
@@ -90,7 +93,7 @@ class ChatReader(
                 }
             }
 
-            is TeamSpeak -> text.replace("\\[/?URL]|,(\$|\\s)".toRegex(), "")
+            is TeamSpeak -> text.replace("\\[/?URL]|,($|\\s)".toRegex(), "")
 
             else -> {
                 println("Couldn't remove tags!\n$client is not a supported client!")
@@ -120,7 +123,7 @@ class ChatReader(
             is OfficialTSClient -> {
                 shouldRead = true
                 val channelFile = client.channelFile
-                return if (channelFile.isFile) {
+                 if (channelFile.isFile) {
                     CoroutineScope(IO).launch {
                         var currentLine = ""
                         while (shouldRead) {
@@ -129,7 +132,7 @@ class ChatReader(
                                 currentLine = last
                                 chatUpdated(currentLine)
                             }
-                            delay(500)
+                            delay(500.milliseconds)
                         }
                     }
                     true
@@ -169,6 +172,11 @@ class ChatReader(
                                 commandRunner.runCommand("tmux kill-session -t ncspot", ignoreOutput = true)
                             }
 
+                            "spotify_player" -> {
+                                playerctl(botSettings.spotifyPlayer, "stop")
+                                commandRunner.runCommand("tmux kill-session -t spotify_player", ignoreOutput = true)
+                            }
+
                             "spotifyd" -> commandRunner.runCommand("echo \"spotifyd isn't well supported yet, please kill it manually.\"")
                             else ->
                                 commandRunner.runCommand(
@@ -177,7 +185,7 @@ class ChatReader(
                         }
 
                     fun startCommand() =
-                        when (botSettings.spotifyPlayer) {
+                        when (val player = botSettings.spotifyPlayer) {
                             "spotify" ->
                                 commandRunner.runCommand(
                                     "xvfb-run -a spotify --no-zygote --disable-gpu" +
@@ -191,9 +199,9 @@ class ChatReader(
                                     inheritIO = true,
                                 )
 
-                            "ncspot" ->
+                            "ncspot", "spotify_player" ->
                                 commandRunner.runCommand(
-                                    "tmux new -s ncspot -n player -d; tmux send-keys -t ncspot \"ncspot\" Enter",
+                                    "tmux new -s $player -n player -d; tmux send-keys -t $player '$player'; sleep 1; tmux send-keys -t $player 'Enter'",
                                     ignoreOutput = true,
                                     printCommand = true,
                                 )
@@ -216,12 +224,12 @@ class ChatReader(
                     }
                     // sometimes the spotify player has problems starting, so ensure it actually starts.
                     while (checkProcess().outputText.isEmpty()) {
-                        delay(7000)
+                        delay(7.seconds)
                         if (checkProcess().outputText.isEmpty()) {
                             repeat(2) { killCommand() }
-                            delay(500)
+                            delay(500.milliseconds)
                             startCommand()
-                            delay(2000)
+                            delay(2.seconds)
                         }
                     }
                     // wait for the spotify player to start.
@@ -234,9 +242,9 @@ class ChatReader(
                     ) {
                         // do nothing
                         println("Waiting for ${botSettings.spotifyPlayer} to start")
-                        delay(10)
+                        delay(10.milliseconds)
                     }
-                    delay(5000)
+                    delay(5.seconds)
                 }
 
                 /**
@@ -313,6 +321,15 @@ class ChatReader(
                                 }
                             }
 
+                            // lyrics command
+                            commandString.contains(
+                                "^(${cmdList.commandList["lyrics"]})$".toRegex(),
+                            ) -> {
+                                printToChat(
+                                    Lyrics().getLyrics(songQueue.nowPlaying())
+                                )
+                            }
+
                             // queue-add command
                             // queue-playnext command
                             commandString.contains(
@@ -322,7 +339,7 @@ class ChatReader(
                                         "(track|album|playlist|show|episode|artist):\\S+)|(https?://\\S+)|" +
                                         "((sp|spotify|yt|youtube|sc|soundcloud|bc|bandcamp)\\s+" +
                                         "(track|album|playlist|show|episode|artist|video|user)\\s+.+))(\\[/URL])?" +
-                                        "\\s*,?\\s*)+(\\s+-\\w*(r|s|t|P|([lp]\\s*[0-9]+)))*\$"
+                                        "\\s*,?\\s*)+(\\s+-\\w*(r|s|t|P|([lp]\\s*[0-9]+)))*$"
                                 ).toRegex(),
                             ) -> {
                                 val trackAddedMsg = "Added track to queue."
@@ -693,7 +710,6 @@ class ChatReader(
                                                                     is SoundCloud -> service.fetchTagOrGenre(link).getTrackList()
                                                                     else -> TrackList()
                                                                 }
-                                                            else -> TrackList()
                                                         }.trackList
                                                             .let { list ->
                                                                 if (trackLimit != 0 && list.size > trackLimit) {
@@ -2183,7 +2199,7 @@ class ChatReader(
                             // sp-pause command
                             commandString.contains("^${cmdList.commandList["sp-pause"]}$".toRegex()) -> {
                                 playerctl(botSettings.spotifyPlayer, "pause")
-                                delay(1000)
+                                delay(1.seconds)
                                 commandJob.complete()
                                 return Pair(true, null)
                             }
@@ -2192,7 +2208,7 @@ class ChatReader(
                                 "^(${cmdList.commandList["sp-resume"]}|${cmdList.commandList["sp-play"]})$".toRegex(),
                             ) -> {
                                 playerctl(botSettings.spotifyPlayer, "play")
-                                delay(1000)
+                                delay(1.seconds)
                                 commandJob.complete()
                                 return Pair(true, null)
                             }
@@ -2200,7 +2216,7 @@ class ChatReader(
                             // Stop spotify playback
                             commandString.contains("^${cmdList.commandList["sp-stop"]}$".toRegex()) -> {
                                 when (val player = botSettings.spotifyPlayer) {
-                                    "ncspot" -> {
+                                    "ncspot", "spotify_player" -> {
                                         playerctl(player, "stop")
                                         commandRunner.runCommand("tmux kill-session -t $player")
                                     }
@@ -2221,14 +2237,14 @@ class ChatReader(
                                 "^(${cmdList.commandList["sp-skip"]}|${cmdList.commandList["sp-next"]})$".toRegex(),
                             ) -> {
                                 playerctl(botSettings.spotifyPlayer, "next")
-                                delay(1000)
+                                delay(1.seconds)
                                 commandJob.complete()
                                 return Pair(true, null)
                             }
                             // sp-prev command
                             commandString.contains("^${cmdList.commandList["sp-prev"]}$".toRegex()) -> {
                                 playerctl(botSettings.spotifyPlayer, "previous")
-                                delay(100)
+                                delay(100.milliseconds)
                                 playerctl(botSettings.spotifyPlayer, "previous")
                                 commandJob.complete()
                                 return Pair(true, null)
@@ -2694,7 +2710,7 @@ class ChatReader(
         track: Track,
     ) {
         when (player) {
-            "spotify", "ncspot", "spotifyd", "mpv" -> {
+            "spotify", "ncspot", "spotify_player", "spotifyd", "mpv" -> {
                 latestMsgUsername = "__song_queue__"
                 parseLine("${cmdList.commandList["queue-nowplaying"]}")
                 println("Now playing:\n$track")

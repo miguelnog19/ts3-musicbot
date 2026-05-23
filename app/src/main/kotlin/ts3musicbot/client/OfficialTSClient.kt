@@ -12,6 +12,10 @@ import java.io.FileOutputStream
 import java.net.URLEncoder
 import kotlin.properties.Delegates
 import kotlin.system.exitProcess
+import java.text.Normalizer
+import java.text.Normalizer.Form
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 class OfficialTSClient(botSettings: BotSettings) : Client(botSettings) {
     val tsClientDirPath = "${System.getProperty("user.home")}/.ts3client"
@@ -145,7 +149,7 @@ class OfficialTSClient(botSettings: BotSettings) : Client(botSettings) {
             if (channelName != currentChannelName) {
                 if (channelPassword.isNotEmpty()) {
                     clientQuery("disconnect")
-                    delay(500)
+                    delay(500.milliseconds)
                     clientQuery(
                         "connect address=${botSettings.serverAddress} password=${encode(botSettings.serverPassword)} " +
                             "nickname=${encode(botSettings.nickname)} " +
@@ -209,6 +213,7 @@ class OfficialTSClient(botSettings: BotSettings) : Client(botSettings) {
             commandRunner.runCommand(
                 ignoreOutput = true,
                 command =
+                    "tmux new -s ts3 -n ts3client -d; tmux send-keys -t ts3 '" +
                     "xvfb-run -a teamspeak3 -nosingleinstance" +
                         " \"" +
                         (if (botSettings.serverAddress.isNotEmpty()) "ts3server://${botSettings.serverAddress}" else "") +
@@ -232,10 +237,10 @@ class OfficialTSClient(botSettings: BotSettings) : Client(botSettings) {
                                 ""
                             }
                         ) +
-                        "\" &",
+                        "\"" + "'; sleep 1; tmux send-keys -t ts3 'Enter'",
                 inheritIO = false,
             )
-            delay(1000)
+            delay(1.seconds)
             // wait for teamspeak to start
             println()
             var dotsAmount = 0
@@ -243,7 +248,7 @@ class OfficialTSClient(botSettings: BotSettings) : Client(botSettings) {
                     .outputText.contains("ts3client_linux".toRegex())
             ) {
                 print("\rWaiting for TeamSpeak's process to start" + ".".repeat(dotsAmount) + "    ")
-                delay(1000)
+                delay(1.seconds)
                 if (dotsAmount < 3) {
                     dotsAmount++
                 } else {
@@ -254,7 +259,7 @@ class OfficialTSClient(botSettings: BotSettings) : Client(botSettings) {
             dotsAmount = 0
             while (getVirtualServerName().isEmpty()) {
                 print("\rWaiting for TeamSpeak to connect to server" + ".".repeat(dotsAmount) + "    ")
-                delay(1000)
+                delay(1.seconds)
                 if (dotsAmount < 3) {
                     dotsAmount++
                 } else {
@@ -265,7 +270,7 @@ class OfficialTSClient(botSettings: BotSettings) : Client(botSettings) {
             serverName = getVirtualServerName()
             println("Server name: $serverName")
             audioSetup()
-            delay(1000)
+            delay(1.seconds)
             return true
         } else {
             return false
@@ -279,7 +284,7 @@ class OfficialTSClient(botSettings: BotSettings) : Client(botSettings) {
         suspend fun generateFile() {
             println("Trying to generate file.")
             killTeamSpeak()
-            delay(500)
+            delay(500.milliseconds)
             val logFile = File("/tmp/tsOutput.log")
             if (!logFile.exists()) {
                 withContext(IO) {
@@ -300,7 +305,7 @@ class OfficialTSClient(botSettings: BotSettings) : Client(botSettings) {
             var dotsAmount = 0
             while (!logFile.readLines().any { it.contains("Addon installed: ClientQuery") }) {
                 print("\rWaiting for TeamSpeak to install ClientQuery addon" + ".".repeat(dotsAmount) + "    ")
-                delay(1000)
+                delay(1.seconds)
                 if (dotsAmount < 3) {
                     dotsAmount++
                 } else {
@@ -309,7 +314,7 @@ class OfficialTSClient(botSettings: BotSettings) : Client(botSettings) {
             }
             println("\nDone.")
             logFile.delete()
-            delay(2000)
+            delay(2.seconds)
             killTeamSpeak()
         }
 
@@ -477,7 +482,7 @@ class OfficialTSClient(botSettings: BotSettings) : Client(botSettings) {
      */
     suspend fun stopTeamSpeak() {
         clientQuery("disconnect")
-        delay(500)
+        delay(500.milliseconds)
         killTeamSpeak()
     }
 
@@ -486,14 +491,10 @@ class OfficialTSClient(botSettings: BotSettings) : Client(botSettings) {
      */
     private suspend fun killTeamSpeak() {
         repeat(4) {
-            commandRunner.runCommand(
-                "pkill -9 ts3client_linux",
-                ignoreOutput = true,
-                printCommand = false,
-                printOutput = false,
-            )
-            delay(200)
+            commandRunner.runCommand("pkill -9 ts3client_linux", ignoreOutput = true)
+            delay(200.milliseconds)
         }
+        commandRunner.runCommand("tmux kill-session -t ts3", ignoreOutput = true)
     }
 
     /**
@@ -558,6 +559,7 @@ class OfficialTSClient(botSettings: BotSettings) : Client(botSettings) {
      * @param message The message to send
      */
     override fun sendMsgToChannel(message: String) {
+        val normalizedMessage = Normalizer.normalize(message, Form.NFKD)
         // TeamSpeak's character limit is 8192 per message
         val tsCharLimit = 8192
 
@@ -644,7 +646,7 @@ class OfficialTSClient(botSettings: BotSettings) : Client(botSettings) {
             )
         }
 
-        var msg = message
+        var msg = normalizedMessage
         while (true) {
             // add an empty line to the start of the message if there isn't one already.
             if (msg.lines().size > 1 && !msg.startsWith("\n")) {
@@ -695,7 +697,7 @@ class OfficialTSClient(botSettings: BotSettings) : Client(botSettings) {
     private fun runPactlCommand(command: String): JSONArray {
         /**
          * Converts a pactl output string to a JSONArray.
-         * This is required because pactl has a built-in json formatter only from version 16.0 onwards.
+         * This is required because pactl has a built-in JSON formatter only from version 16.0 onwards.
          * @param stringToConvert The string you want to convert
          * @return Returns a JSONArray which was parsed from stringToConvert
          */

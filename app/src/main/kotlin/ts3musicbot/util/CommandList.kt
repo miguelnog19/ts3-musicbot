@@ -23,6 +23,7 @@ data class CommandList(
             Pair("queue-pause", "%queue-pause"),
             Pair("queue-resume", "%queue-resume"),
             Pair("queue-repeat", "%queue-repeat"),
+            Pair("lyrics", "%lyrics"),
             Pair("info", "%info"),
             Pair("search", "%search"),
             Pair("goto", "%goto"),
@@ -84,6 +85,7 @@ data class CommandList(
                     "${commandList["queue-repeat"]} <amount>                       -Adds the currently playing song to the top of the queue. <amount> is how many times the song should be queued.\n" +
                     "${commandList["search"]} <service> <type> <text> <limit>      -Search on SoundCloud, Spotify, YouTube or Bandcamp. Shows 10 first results by default. <type> can be track, video, playlist or channel. You can set the amount of results with the -l/--limit flag.\n" +
                     "${commandList["info"]} <link/search query>                    -Shows info on the given search query or link(s). <link> can be one or more Spotify, YouTube or SoundCloud links, separated by a comma.\n" +
+                    "${commandList["lyrics"]}                                      -Shows lyrics for the currently playing track.\n" +
                     "${commandList["goto"]} <channelpath> -p <channelpassword>     -Move the bot to a different channel.\n" +
                     "${commandList["return"]}                                      -Return the bot back to the original channel.\n" +
                     "\n\n" +
@@ -405,6 +407,12 @@ data class CommandList(
                     "${commandList["goto"]} Music/MusicBot -p 123\n" +
                     "Example 3 - Move to a channel at \"Music/Music Bot\" with the password \"secret password\"\n" +
                     "${commandList["goto"]} \"Music/Music Bot\" -p \"secret password\"",
+            ),
+            Pair(
+                "lyrics",
+                "\n" +
+                    "Showing help for ${commandList["lyrics"]} command:\n" +
+                    "${commandList["lyrics"]} can be used to get lyrics for the currently playing track."
             ),
             Pair(
                 "return",

@@ -8,13 +8,15 @@ import ts3musicbot.util.BotSettings
 import java.io.File
 import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.text.Normalizer
+import java.text.Normalizer.Form
 
 class TeamSpeak(botSettings: BotSettings) : Client(botSettings), TS3Listener {
     private val clientSocket: LocalTeamspeakClientSocket = LocalTeamspeakClientSocket()
 
     init {
         clientSocket.addListener(this)
-        clientSocket.setIdentity(getIdentity())
+        clientSocket.identity = getIdentity()
         clientSocket.nickname = botSettings.nickname
     }
 
@@ -160,6 +162,7 @@ class TeamSpeak(botSettings: BotSettings) : Client(botSettings), TS3Listener {
      * @param message the message to send
      */
     override fun sendMsgToChannel(message: String) {
+        val normalizedMessage = Normalizer.normalize(message, Form.NFKD)
         val tsCharLimit = 8192
 
         /**
@@ -250,7 +253,7 @@ class TeamSpeak(botSettings: BotSettings) : Client(botSettings), TS3Listener {
             )
         }
 
-        var msg = message
+        var msg = normalizedMessage
         while (true) {
             // If msg has more tha one line, add an empty line to the start of the message if there isn't one already.
             if (msg.lines().size > 1) {

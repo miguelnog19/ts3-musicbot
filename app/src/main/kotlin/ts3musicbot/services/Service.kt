@@ -67,7 +67,7 @@ open class Service(
                 withContext(Dispatchers.IO) {
                     URLDecoder.decode(text, Charsets.UTF_8.toString())
                 }
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 text
                     .replace("&amp;", "&")
                     .replace("%3A", ":")
@@ -140,7 +140,7 @@ open class Service(
         resultLimit: Int = 10,
         encodeQuery: Boolean = true,
     ): SearchResults {
-        println("search is not implemented for " + serviceType)
+        println("search is not implemented for $serviceType")
         return SearchResults(emptyList())
     }
 

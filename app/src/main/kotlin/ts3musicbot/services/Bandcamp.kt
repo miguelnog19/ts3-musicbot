@@ -1,7 +1,7 @@
 package ts3musicbot.services
 
 import kotlinx.coroutines.Dispatchers.IO
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -37,6 +37,7 @@ import ts3musicbot.util.sendHttpRequest
 import java.net.HttpURLConnection
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import kotlin.time.Duration.Companion.seconds
 
 class Bandcamp : Service(ServiceType.BANDCAMP) {
     private val formatter = DateTimeFormatter.ofPattern("dd MMM yyyy HH:mm:ss z")
@@ -46,7 +47,6 @@ class Bandcamp : Service(ServiceType.BANDCAMP) {
             LinkType.TRACK,
             LinkType.ALBUM,
             LinkType.ARTIST,
-            LinkType.SHOW,
         )
 
     override suspend fun search(
@@ -55,124 +55,105 @@ class Bandcamp : Service(ServiceType.BANDCAMP) {
         resultLimit: Int,
         encodeQuery: Boolean,
     ): SearchResults {
-        val itemType =
-            when (searchType.getType()) {
-                LinkType.ALBUM -> "a"
-                LinkType.ARTIST -> "b"
-                LinkType.TRACK -> "t"
-                else -> ""
-            }
         val linkBuilder = StringBuilder()
-        linkBuilder.append("https://bandcamp.com/search?")
+        linkBuilder.append("https://bandcamp.com/api/fuzzysearch/1/app_autocomplete?")
         linkBuilder.append("q=" + if (encodeQuery) encode(searchQuery.query) else searchQuery)
-        if (itemType.isNotEmpty()) {
-            linkBuilder.append("&=item_type=$itemType")
-        }
         val response = sendHttpRequest(Link(linkBuilder.toString()))
-        return when (response.code.code) {
-            HttpURLConnection.HTTP_OK -> {
-                val results =
-                    response.data.data
-                        .substringAfter("<ul class=\"result-items\">")
-                        .substringBefore("</ul>")
-                        .split("(.*<li class=\"searchresult data-search\"\n\\s+data-search=\".+\">|</li>)".toRegex())
+        lateinit var searchResults: SearchResults
+        while (true) {
+            when (response.code.code) {
+                HttpURLConnection.HTTP_OK -> {
+                    val results = JSONObject(response.data.data).getJSONArray("results")
                         .map { item ->
-                            item
-                                .substringAfter("<div class=\"result-info\">")
-                                .substringBeforeLast("</div>")
-                                .split("(<div|</div>)".toRegex())
-                                .associate {
-                                    Pair(
-                                        it.substringAfter("class=\"").substringBefore("\">"),
-                                        it.substringAfter("\">").trim(),
-                                    )
-                                }.filterNot { it.key.contains("^(\\s+|\n+)+$".toRegex()) }
-                        }.map { data ->
-                            val resultType = data["itemtype"]?.let { SearchType(it).getType() }
-                            if (resultType == searchType.getType()) {
-                                when (resultType) {
-                                    LinkType.ARTIST -> {
-                                        val artistName = data["heading"]!!.substringAfter("\">").substringBefore("</a>").trim()
-                                        val genres = data["genre"]!!.substringAfter("genre: ")
-                                        val artistLink = Link(data["itemurl"]!!.substringAfter("\">").substringBefore("</a>"))
-                                        val artist =
+                            item as JSONObject
+                            when (item.getString("type")) {
+                                "a" -> { //album
+                                    val artistName = item.getString("band_name")
+                                    val url = item.getString("url")
+                                    val artistUrl = url.substringBeforeLast("https://")
+                                    val albumUrl = "https://" + url.substringAfterLast("https://")
+                                    val albumName = item.getString("name")
+                                    val album = Album(
+                                        Name(albumName),
+                                        Artists(listOf(
                                             Artist(
                                                 Name(artistName),
-                                                artistLink,
-                                                genres = Genres(listOf(genres)),
+                                                Link(artistUrl)
                                             )
-                                        SearchResult(artist, artist.link)
-                                    }
-
-                                    LinkType.ALBUM -> {
-                                        val artist =
-                                            Artist(
-                                                Name(data["subhead"]!!.substringAfter("by ").trim()),
-                                            )
-                                        val albumName = data["heading"]!!.substringAfter("\">").substringBefore("</a>").trim()
-                                        val albumLink = Link(data["itemurl"]!!.substringAfter("\">").substringBefore("</a>"))
-                                        val album =
-                                            Album(
-                                                Name(albumName),
-                                                Artists(listOf(artist)),
-                                                link = albumLink,
-                                            )
-                                        SearchResult(album, album.link)
-                                    }
-
-                                    LinkType.TRACK -> {
-                                        val album =
-                                            Album(
-                                                Name(
-                                                    data["subhead"]!!
-                                                        .substringAfter("from ")
-                                                        .substringBefore("\n") + "\n",
-                                                ),
-                                            )
-                                        val artist =
-                                            Artist(
-                                                Name(
-                                                    data["subhead"]!!
-                                                        .substringAfter("by ")
-                                                        .trim()
-                                                        .substringAfter("by "),
-                                                ),
-                                            )
-                                        val trackName = data["heading"]!!.substringAfter("\">").substringBefore("</a>").trim()
-                                        val trackLink = data["itemurl"]!!.substringAfter("\">").substringBefore("</a>")
-                                        val track =
-                                            Track(
-                                                album,
-                                                Artists(listOf(artist)),
-                                                Name(trackName),
-                                                Link(trackLink),
-                                            )
-                                        SearchResult(track, track.link)
-                                    }
-                                    else -> SearchResult(Playable(), Link())
+                                        )),
+                                        link = Link(albumUrl)
+                                    )
+                                    SearchResult(album, album.link)
                                 }
-                            } else {
-                                SearchResult(Playable(), Link())
+                                "b" -> {
+                                    val artistName = item.getString("name")
+                                    val artistUrl = item.getString("url")
+                                    val genres = if (!item.isNull("tag_names")) item.getJSONArray("tag_names").map { it as String; it } else emptyList()
+                                    val artist = Artist(
+                                        Name(artistName),
+                                        Link(artistUrl),
+                                        genres = Genres(genres)
+                                    )
+                                    SearchResult(artist, artist.link)
+                                }
+                                "t" -> {
+                                    val album = if (!item.isNull("album_name")) {
+                                        Album(Name(item.getString("album_name")))
+                                    } else {
+                                        Album()
+                                    }
+                                    val artistName = item.getString("band_name")
+                                    val trackTitle = item.getString("name")
+                                    val url = item.getString("url")
+                                    val artistUrl = url.substringBeforeLast("https://")
+                                    val trackUrl = "https://" + url.substringAfterLast("https://")
+                                    val artists = Artists(listOf(
+                                        Artist(
+                                            Name(artistName),
+                                            Link(artistUrl)
+                                        )
+                                    ))
+                                    val track = Track(
+                                        album,
+                                        artists,
+                                        Name(trackTitle),
+                                        Link(trackUrl)
+                                    )
+                                    SearchResult(track, track.link)
+                                }
+                                else -> SearchResult(Playable(), Link())
                             }
                         }
-                SearchResults(
-                    if (resultLimit != 0 && results.size > resultLimit) {
-                        results.subList(0, resultLimit)
-                    } else {
-                        results
-                    },
-                )
-            }
+                    val filteredResults = results.filter { it.isNotEmpty() && it.link.linkType(this) == searchType.getType()}
+                    searchResults = SearchResults(
+                        if (resultLimit != 0 && filteredResults.size > resultLimit) {
+                            filteredResults.subList(0, resultLimit)
+                        } else {
+                            filteredResults
+                        }
+                    )
+                    break
+                }
 
-            else -> SearchResults(emptyList())
+                HTTP_TOO_MANY_REQUESTS -> {
+                    println("Too many requests! Waiting for ${response.data} seconds.")
+                    // wait for given time before next request.
+                    delay(response.data.data.toLong().seconds)
+                }
+
+                else -> {
+                    SearchResults(emptyList())
+                    println("HTTP CODE " + response.code.code)
+                }
+            }
         }
+        return searchResults
     }
 
     override suspend fun fetchTrack(trackLink: Link): Track {
         val request = sendHttpRequest(trackLink)
         lateinit var track: Track
-        val trackJob = Job()
-        withContext(IO + trackJob) {
+        withContext(IO) {
             while (true) {
                 when (request.code.code) {
                     HttpURLConnection.HTTP_OK -> {
@@ -272,20 +253,18 @@ class Bandcamp : Service(ServiceType.BANDCAMP) {
                                     Playability(trackData.has("duration")),
                                 )
                             }
-                        trackJob.complete()
                         return@withContext
                     }
 
                     HTTP_TOO_MANY_REQUESTS -> {
                         println("Too many requests! Waiting for ${request.data} seconds.")
                         // wait for given time before next request.
-                        delay(request.data.data.toLong() * 1000)
+                        delay(request.data.data.toLong().seconds)
                     }
 
                     else -> {
                         println("HTTP ERROR! CODE: ${request.code}")
                         track = Track()
-                        trackJob.complete()
                         return@withContext
                     }
                 }
@@ -586,6 +565,7 @@ class Bandcamp : Service(ServiceType.BANDCAMP) {
                         else -> Discoveries()
                     }
                 } catch (e: Exception) {
+                    e.printStackTrace()
                     println("Failed JSON:\n${response.data}\n")
                     Discoveries()
                 }
@@ -658,26 +638,25 @@ class Bandcamp : Service(ServiceType.BANDCAMP) {
             apiJSON: JSONObject?,
         ): Show {
             return if (websiteJSON != null && apiJSON != null) {
-                val apiShowData = apiJSON.getJSONObject("radioShowAudio")
                 val websiteShowData =
                     websiteJSON.getJSONObject("appData").getJSONArray("shows").first {
                         it as JSONObject
-                        it.getInt("showId") == showId
+                        it.getInt("itemId") == showId
                     } as JSONObject
-                val title = apiShowData.getString("title")
-                val imageCaption = websiteShowData.getString("imageCaption")
+                val title = apiJSON.getString("title")
+                val imageCaption = websiteShowData.getString("metadata")
                 val publisher =
                     Publisher(
                         Name(imageCaption.substringAfter(">").substringBefore("<")),
-                        Link(imageCaption.substringAfter("href=\\\"").substringBefore("\\\"")),
+                        Link(imageCaption.substringAfter("href=\"").substringBefore("\"")),
                     )
-                val tracksData = apiJSON.getJSONArray("tracklist")
+                val tracksData = apiJSON.getJSONArray("tracks")
                 Show(
                     Name(title),
                     publisher,
                     // TODO: get release date
-                    description = Description(websiteShowData.getString("desc"), websiteShowData.getString("shortDesc")),
-                    episodeName = Name(apiShowData.getString("title")),
+                    description = Description(websiteShowData.getString("description"), websiteShowData.getString("shortDesc")),
+                    episodeName = Name(apiJSON.getString("title")),
                     tracks =
                         TrackList(
                             tracksData.map { track ->
@@ -712,10 +691,9 @@ class Bandcamp : Service(ServiceType.BANDCAMP) {
             }
         }
 
-        val showJob = Job()
         var websiteJSON: JSONObject? = null
         var apiJSON: JSONObject? = null
-        withContext(IO + showJob) {
+        withContext(IO) {
             when (websiteResponse.code.code) {
                 HttpURLConnection.HTTP_OK -> {
                     try {
@@ -730,30 +708,31 @@ class Bandcamp : Service(ServiceType.BANDCAMP) {
                     } catch (e: Exception) {
                         println(e)
                         println("Failed JSON:\n${websiteResponse.data}\n")
-                        showJob.cancel()
+                        this.cancel()
                         return@withContext
                     }
                 }
 
                 else -> {
-                    showJob.cancel()
+                    this.cancel()
                     return@withContext
                 }
             }
-            when (apiResponse.code.code) {
+            when (val code = apiResponse.code.code) {
                 HttpURLConnection.HTTP_OK -> {
                     try {
                         apiJSON = JSONObject(apiResponse.data.data)
                     } catch (e: Exception) {
-                        println(e)
-                        println("Failed JSON:\n${apiResponse.data}\n")
-                        showJob.cancel()
+                        e.printStackTrace()
+                        val msg = "Failed JSON:\n${apiResponse.data}\n"
+                        println(msg)
+                        this.cancel(msg)
                         return@withContext
                     }
                 }
 
                 else -> {
-                    showJob.cancel()
+                    this.cancel("Got error code $code")
                     return@withContext
                 }
             }

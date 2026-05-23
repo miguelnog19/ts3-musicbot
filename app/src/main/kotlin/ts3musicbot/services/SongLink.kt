@@ -67,7 +67,7 @@ class SongLink(
             songLinkResults.add(SearchResult(playable, songLink))
         } else {
             // do a regular search
-            // the song.link website uses apple music's search for its search feature, so let's use that here too
+            // the song.link website uses Apple Music's search for its search feature, so let's use that here too
             val appleMusicResults = appleMusic.search(searchType, searchQuery, resultLimit, encodeQuery)
             for (result in appleMusicResults.results) {
                 val songLink = fetchLink(result.link)
@@ -95,19 +95,16 @@ class SongLink(
         val response = sendHttpRequest(Link(sb.toString()))
 
         var songLink = Link()
-        val fetchJob = Job()
-        withContext(IO + fetchJob) {
+        withContext(IO) {
             while (true) {
                 when (response.code.code) {
                     HttpURLConnection.HTTP_OK -> {
                         val jsonData = JSONObject(response.data.data)
                         songLink = Link(jsonData.getString("pageUrl"))
-                        fetchJob.complete()
                         return@withContext
                     }
                     else -> {
                         println("HTTP ERROR! CODE ${response.code}")
-                        fetchJob.complete()
                         return@withContext
                     }
                 }
@@ -120,7 +117,7 @@ class SongLink(
         lateinit var track: Track
         val trackJob = Job()
         val request = sendHttpRequest(trackLink)
-        withContext(IO + trackJob) {
+        withContext(IO) {
             while (true) {
                 when (request.code.code) {
                     HttpURLConnection.HTTP_OK -> {
@@ -214,7 +211,7 @@ class SongLink(
         var album = Album()
 
         val albumJob = Job()
-        withContext(IO + albumJob) {
+        withContext(IO) {
             while (true) {
                 val request = sendHttpRequest(albumLink)
                 // check http return code

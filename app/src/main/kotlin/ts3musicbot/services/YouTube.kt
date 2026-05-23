@@ -2,6 +2,7 @@ package ts3musicbot.services
 
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.withContext
 import org.json.JSONException
 import org.json.JSONObject
@@ -82,8 +83,7 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
         val formatter = DateTimeFormatter.ISO_INSTANT.withZone(ZoneId.of("Z"))
         var key = apiKey1
         var track = Track()
-        val ytJob = Job()
-        withContext(IO + ytJob) {
+        withContext(IO) {
             while (true) {
                 val response = sendRequest(key = key)
                 when (response.code.code) {
@@ -95,7 +95,6 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
                                         it.first()
                                     } else {
                                         track = Track(link = videoLink)
-                                        ytJob.complete()
                                         return@withContext
                                     }
                                 }
@@ -127,10 +126,10 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
                                     Playability(isPlayable),
                                     description = Description(itemData.getJSONObject("snippet").getString("description")),
                                 )
-                            ytJob.complete()
                             return@withContext
                         } catch (e: JSONException) {
-                            println("broken JSON, trying again")
+                            e.printStackTrace()
+                            this.cancel("Broken JSON")
                         }
                     }
 
@@ -140,14 +139,12 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
                             key = apiKey2
                         } else {
                             println("HTTP ERROR! CODE: ${response.code}")
-                            ytJob.complete()
                             return@withContext
                         }
                     }
 
                     else -> {
                         println("HTTP ERROR! CODE: ${response.code}")
-                        ytJob.complete()
                         return@withContext
                     }
                 }
@@ -179,9 +176,8 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
             return sendHttpRequest(Link(linkBuilder.toString()))
         }
 
-        val playlistJob = Job()
         var key = apiKey1
-        return withContext(IO + playlistJob) {
+        return withContext(IO) {
             var playlist = Playlist()
             while (true) {
                 val playlistData = fetchPlaylistData(key)
@@ -211,7 +207,7 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
                             break
                         } catch (e: JSONException) {
                             e.printStackTrace()
-                            println("broken JSON, trying again")
+                            this.cancel("broken JSON")
                             break
                         }
                     }
@@ -232,7 +228,6 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
                     }
                 }
             }
-            playlistJob.complete()
             playlist
         }
     }
@@ -281,15 +276,14 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
             lateinit var itemData: JSONObject
             if (totalItems > 50) {
                 var key = apiKey1
-                val getPageJob = Job()
                 var pageData = data
-                withContext(IO + getPageJob) {
+                withContext(IO) {
                     while (listItems.size < totalItems) {
                         while (true) {
                             val result =
                                 sendRequest(
                                     pageToken =
-                                        if (listItems.size > 0) {
+                                        if (listItems.isNotEmpty()) {
                                             pageData.getString(("nextPageToken"))
                                         } else {
                                             ""
@@ -349,18 +343,17 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
                                                     listItems.add(track)
                                                 } else {
                                                     println("Limit reached!")
-                                                    getPageJob.complete()
                                                     return@withContext
                                                 }
                                             } else {
                                                 listItems.add(track)
                                             }
                                         } catch (e: Exception) {
+                                            e.printStackTrace()
                                             totalItems -= 1
                                         }
                                     }
                                     if (!pageData.has("nextPageToken")) {
-                                        getPageJob.complete()
                                         return@withContext
                                     }
                                 }
@@ -370,14 +363,12 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
                                         key = apiKey2
                                     } else {
                                         println("HTTP ERROR! CODE: ${result.code}")
-                                        getPageJob.complete()
                                         return@withContext
                                     }
                                 }
 
                                 else -> {
                                     println("HTTP ERROR! CODE: ${result.code}")
-                                    getPageJob.complete()
                                     return@withContext
                                 }
                             }
@@ -385,9 +376,8 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
                     }
                 }
             } else {
-                val playlistJob = Job()
                 var key = apiKey1
-                withContext(IO + playlistJob) {
+                withContext(IO) {
                     while (true) {
                         val result = sendRequest(apiKey = key)
                         when (result.code.code) {
@@ -449,10 +439,10 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
                                             listItems.add(track)
                                         }
                                     } catch (e: Exception) {
+                                        e.printStackTrace()
                                         totalItems -= 1
                                     }
                                 }
-                                playlistJob.complete()
                                 return@withContext
                             }
 
@@ -461,14 +451,12 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
                                     key = apiKey2
                                 } else {
                                     println("HTTP ERROR! CODE: ${result.code}")
-                                    playlistJob.complete()
                                     return@withContext
                                 }
                             }
 
                             else -> {
                                 println("HTTP ERROR! CODE: ${result.code}")
-                                playlistJob.complete()
                                 return@withContext
                             }
                         }
@@ -479,9 +467,8 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
         }
 
         var trackList = TrackList()
-        val playlistJob = Job()
         var key = apiKey1
-        withContext(IO + playlistJob) {
+        withContext(IO) {
             while (true) {
                 val response = sendRequest(part = "id", apiKey = key)
                 when (response.code.code) {
@@ -489,11 +476,10 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
                         try {
                             val data = JSONObject(response.data.data)
                             trackList = parseItems(data)
-                            playlistJob.complete()
                             return@withContext
                         } catch (e: JSONException) {
                             e.printStackTrace()
-                            println("Error! Broken JSON!")
+                            this.cancel("Error! Broken JSON!")
                         }
                     }
 
@@ -502,14 +488,12 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
                             key = apiKey2
                         } else {
                             println("HTTP ERROR! CODE: ${response.code}")
-                            playlistJob.complete()
                             return@withContext
                         }
                     }
 
                     else -> {
                         println("HTTP ERROR! CODE: ${response.code}")
-                        playlistJob.complete()
                         return@withContext
                     }
                 }
@@ -542,45 +526,35 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
         suspend fun parsePlaylistsData(playlistsData: JSONObject): List<Playlist> {
             val playlists = ArrayList<Playlist>()
             var items = playlistsData.getJSONArray("items")
+            var key = apiKey1
             while (playlists.size < playlistsData.getJSONObject("pageInfo").getInt("totalResults")) {
                 if (items.isEmpty && playlistsData.has("nextPageToken")) {
-                    val itemsJob = Job()
-                    var key = apiKey1
-                    var pageToken = playlistsData.getString("nextPageToken")
+                    val pageToken = playlistsData.getString("nextPageToken")
                     items =
-                        withContext(IO + itemsJob) {
+                        withContext(IO) {
                             lateinit var newItems: JSONObject
-                            while (true) {
-                                val newPageData = fetchPlaylistsData(key, pageToken)
-                                when (newPageData.code.code) {
-                                    HttpURLConnection.HTTP_OK -> {
-                                        try {
-                                            val pageJSON = JSONObject(newPageData.data.data)
-                                            if (pageJSON.has("nextPageToken")) {
-                                                pageToken = pageJSON.getString("nextPageToken")
-                                            }
-                                            newItems = pageJSON
-                                            break
-                                        } catch (e: JSONException) {
-                                            e.printStackTrace()
-                                            println("Error! JSON Broken!")
-                                            break
-                                        }
+                            val newPageData = fetchPlaylistsData(key, pageToken)
+                            when (newPageData.code.code) {
+                                HttpURLConnection.HTTP_OK -> {
+                                    try {
+                                        val pageJSON = JSONObject(newPageData.data.data)
+                                        newItems = pageJSON
+                                    } catch (e: JSONException) {
+                                        e.printStackTrace()
+                                        this.cancel("Error! JSON Broken!")
                                     }
+                                }
 
-                                    HttpURLConnection.HTTP_FORBIDDEN -> {
-                                        if (key == apiKey1) {
-                                            key = apiKey2
-                                        } else {
-                                            println("HTTP ERROR! CODE: ${newPageData.code}")
-                                            break
-                                        }
-                                    }
-
-                                    else -> {
+                                HttpURLConnection.HTTP_FORBIDDEN -> {
+                                    if (key == apiKey1) {
+                                        key = apiKey2
+                                    } else {
                                         println("HTTP ERROR! CODE: ${newPageData.code}")
-                                        break
                                     }
+                                }
+
+                                else -> {
+                                    println("HTTP ERROR! CODE: ${newPageData.code}")
                                 }
                             }
                             newItems.getJSONArray("items")
@@ -603,9 +577,8 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
             return playlists
         }
 
-        val playlistJob = Job()
         var key = apiKey1
-        return withContext(IO + playlistJob) {
+        return withContext(IO) {
             val lists = ArrayList<Playlist>()
             while (true) {
                 val playlistsData = fetchPlaylistsData(key)
@@ -617,7 +590,7 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
                             break
                         } catch (e: JSONException) {
                             e.printStackTrace()
-                            println("Error! JSON Broken!")
+                            this.cancel("Error! JSON Broken!")
                             break
                         }
                     }
@@ -656,9 +629,8 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
             return sendHttpRequest(Link(linkBuilder.toString()))
         }
 
-        val channelJob = Job()
         var key = apiKey1
-        return withContext(IO + channelJob) {
+        return withContext(IO) {
             var channel = User()
             while (true) {
                 val channelData = fetchChannelData(key)
@@ -679,7 +651,7 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
                             break
                         } catch (e: JSONException) {
                             e.printStackTrace()
-                            println("Error! JSON Broken!")
+                            this.cancel("Error! JSON Broken!")
                             break
                         }
                     }
@@ -699,7 +671,6 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
                     }
                 }
             }
-            channelJob.complete()
             channel
         }
     }
@@ -748,9 +719,8 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
 
         val searchResults = ArrayList<SearchResult>()
         println("Searching for \"$searchQuery\" on YouTube...")
-        val searchJob = Job()
         var key = apiKey1
-        withContext(IO + searchJob) {
+        withContext(IO) {
             // YouTube allows a maximum of 50 results, so we have to do searches in smaller chunks in case the user wants more than 50 results
             val maxResults = 50
             var searchData = searchData(key, if (resultLimit > maxResults) maxResults else resultLimit)
@@ -852,13 +822,11 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
                                         responseData.getString("nextPageToken"),
                                     )
                             } else {
-                                searchJob.complete()
                                 return@withContext
                             }
                         } catch (e: Exception) {
                             e.printStackTrace()
-                            println("Error! JSON Broken!")
-                            searchJob.complete()
+                            this.cancel("Error! JSON Broken!")
                             return@withContext
                         }
                     }
@@ -869,14 +837,12 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
                             searchData = searchData(key, link = searchData.link)
                         } else {
                             println("HTTP ERROR! CODE: ${searchData.code}")
-                            searchJob.complete()
                             return@withContext
                         }
                     }
 
                     else -> {
                         println("HTTP ERROR! CODE: ${searchData.code}")
-                        searchJob.complete()
                         return@withContext
                     }
                 }
@@ -900,7 +866,6 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
             return sendHttpRequest(Link(linkBuilder.toString()))
         }
 
-        val resolveJob = Job()
         var key = apiKey1
         return when {
             "$link".contains("\\S+/playlist\\?\\S+".toRegex()) -> LinkType.PLAYLIST
@@ -908,7 +873,7 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
             "$link".contains("(youtu\\.be|\\S+((\\w*\\?)?\\S*(vi?))[=/]\\S+)".toRegex()) -> LinkType.VIDEO
             "$link".contains("\\S+/results\\?\\S+".toRegex()) -> LinkType.QUERY
             else ->
-                withContext(IO + resolveJob) {
+                withContext(IO) {
                     // Attempt to resolve the link type via YouTube API
                     var linkType = LinkType.OTHER
                     while (true) {
@@ -936,7 +901,7 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
                                     break
                                 } catch (e: JSONException) {
                                     e.printStackTrace()
-                                    println("Error! Broken JSON!")
+                                    this.cancel("Error! Broken JSON!")
                                 }
                             }
 
@@ -955,7 +920,6 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
                             }
                         }
                     }
-                    resolveJob.complete()
                     linkType
                 }
         }
@@ -979,7 +943,7 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
         } else {
             val idJob = Job()
             var key = apiKey1
-            return withContext(IO + idJob) {
+            withContext(IO) {
                 var id = ""
                 while (true) {
                     val channelData = fetchData(key)
@@ -1000,7 +964,7 @@ class YouTube(customApiKey: String = "") : Service(ServiceType.YOUTUBE) {
                                 break
                             } catch (e: JSONException) {
                                 e.printStackTrace()
-                                println("Error! JSON Broken!")
+                                this.cancel("Error! JSON Broken!")
                                 break
                             }
                         }

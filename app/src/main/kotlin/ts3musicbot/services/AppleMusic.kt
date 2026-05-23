@@ -2,7 +2,6 @@ package ts3musicbot.services
 
 import kotlinx.coroutines.Dispatchers.Default
 import kotlinx.coroutines.Dispatchers.IO
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.withContext
 import org.json.JSONException
 import org.json.JSONObject
@@ -152,18 +151,16 @@ class AppleMusic(val botSettings: BotSettings) : Service(ServiceType.APPLE_MUSIC
         }
 
         var searchResults = SearchResults(emptyList())
-        val searchJob = Job()
-        withContext(IO + searchJob) {
+        withContext(IO) {
             var resultsData = searchData()
             while (true) {
                 when (resultsData.code.code) {
                     HttpURLConnection.HTTP_OK -> {
                         try {
                             val jsonResults = JSONObject(resultsData.data.data.replace("(^\\s*\n*\\s*|\\s*\n*\\s*$)".toRegex(), ""))
-                            withContext(Default + searchJob) {
+                            withContext(Default) {
                                 searchResults = parseResults(jsonResults)
                             }
-                            searchJob.complete()
                             return@withContext
                         } catch (e: JSONException) {
                             // JSON broken, try getting the data again
@@ -198,7 +195,7 @@ class AppleMusic(val botSettings: BotSettings) : Service(ServiceType.APPLE_MUSIC
         }
     }
 
-    suspend fun resolveId(link: Link): String {
+    fun resolveId(link: Link): String {
         return when (link.linkType(this)) {
             LinkType.TRACK, LinkType.EPISODE -> "$link".substringAfter("?").substringAfter("i=").substringBefore("&")
             LinkType.ALBUM, LinkType.SHOW -> "$link".substringBefore("?").substringAfterLast("/")

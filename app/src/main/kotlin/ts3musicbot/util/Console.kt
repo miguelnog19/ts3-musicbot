@@ -8,6 +8,8 @@ import ts3musicbot.client.Client
 import ts3musicbot.client.OfficialTSClient
 import ts3musicbot.client.TeamSpeak
 import kotlin.system.exitProcess
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 class Console(
     private val commandList: CommandList,
@@ -16,7 +18,7 @@ class Console(
 ) {
     private val commandRunner = CommandRunner()
 
-    fun startConsole() {
+    suspend fun startConsole() {
         // start console
         val console = System.console()
         println("Enter command \"help\" for all commands.")
@@ -58,7 +60,7 @@ class Console(
                 }
 
                 "restart" ->
-                    when (userCommand.replace("$command\\s+".toRegex(), "").replace("\\s+.*$", "").lowercase()) {
+                    when (val target = userCommand.replace("$command\\s+".toRegex(), "").replace("\\s+.*$", "").lowercase()) {
                         "ts", "teamspeak" ->
                             CoroutineScope(IO).launch {
                                 when (client) {
@@ -67,22 +69,22 @@ class Console(
                                 }
                             }
 
-                        "ncspot" ->
+                        "ncspot", "spotify_player"->
                             CoroutineScope(IO).launch {
-                                playerctl("ncspot", "stop")
+                                playerctl(target, "stop")
                                 commandRunner.runCommand(
-                                    "tmux kill-session -t ncspot",
+                                    "tmux kill-session -t $target",
                                     ignoreOutput = true,
                                 )
-                                delay(100)
+                                delay(100.milliseconds)
                                 commandRunner.runCommand(
-                                    "tmux new -s ncspot -n player -d; tmux send-keys -t ncspot \"ncspot\" Enter",
+                                    "tmux new -s $target -n player -d; tmux send-keys -t $target '$target'; sleep 1; tmux send-keys -t $target 'Enter'",
                                     ignoreOutput = true,
                                     printCommand = true,
                                 )
                             }
 
-                        else -> println("Specify either ts,teamspeak or ncspot!")
+                        else -> println("You must specify ts, teamspeak, ncspot or spotify_player!")
                     }
 
                 "playerctl" -> {
@@ -117,32 +119,34 @@ class Console(
         }
     }
 
-    private fun exit(command: String) {
+    private suspend fun exit(command: String) {
         val console = System.console()
         var confirmed = false
         while (!confirmed) {
             val exitTeamSpeak = console.readLine("Close TeamSpeak? [Y/n]: ").lowercase()
             if (exitTeamSpeak.contentEquals("y") || exitTeamSpeak.contentEquals("yes") || exitTeamSpeak.contentEquals("")) {
                 confirmed = true
-                CoroutineScope(IO).launch {
-                    when (client) {
-                        is TeamSpeak -> launch { client.disconnect() }
-                        is OfficialTSClient -> launch { client.stopTeamSpeak() }
-                    }
-                    delay(1000)
+                when (client) {
+                    is TeamSpeak -> client.disconnect()
+                    is OfficialTSClient -> client.stopTeamSpeak()
                 }
+                delay(1.seconds)
             } else if (exitTeamSpeak.contentEquals("n") || exitTeamSpeak.contentEquals("no")) {
                 break
             }
         }
 
+        // TODO: clean up the following code and use BotSettings.spotifyPlayer instead of hardcoding values
+        // val spotifyPlayer = BotSettings.spotifyPlayer
         playerctl("ncspot", "stop")
+        playerctl("spotify_player", "stop")
         playerctl("spotifyd", "stop")
         commandRunner.runCommand("pkill mpv", ignoreOutput = true)
         commandRunner.runCommand("pkill ncspot", ignoreOutput = true)
+        commandRunner.runCommand("pkill spotify_player", ignoreOutput = true)
         commandRunner.runCommand("pkill -9 spotify", ignoreOutput = true)
         commandRunner.runCommand("tmux kill-session -t ncspot", ignoreOutput = true)
-        commandRunner.runCommand("pkill -9 ts3client_linux", ignoreOutput = true)
+        commandRunner.runCommand("tmux kill-session -t spotify_player", ignoreOutput = true)
         consoleUpdateListener.onCommandIssued(command)
         exitProcess(0)
     }

@@ -104,6 +104,16 @@ class SoundCloudTest {
     }
 
     @Test
+    fun testGettingUserTracks() {
+        runBlocking(IO) {
+            // SoundCloud link to user noisia's reposts
+            val testLink = Link("https://soundcloud.com/noisia/tracks")
+            val tracks = soundCloud.fetchUserTracks(testLink)
+            assertTrue { tracks.isNotEmpty() }
+        }
+    }
+
+    @Test
     fun testGettingAlbum() {
         runBlocking(IO) {
             // SoundCloud link to album: Brute Force

@@ -14,9 +14,9 @@ data class Output(val outputText: String = "", val errorText: String = "") {
             "${outputText.let { if (it.isEmpty()) it else "$it\n" }}$errorText"
         }
 
-    public fun ifOutputTextNotEmpty(fn: (text: String) -> String) = if (outputText.isNotEmpty()) fn(outputText) else ""
+    fun ifOutputTextNotEmpty(fn: (text: String) -> String) = if (outputText.isNotEmpty()) fn(outputText) else ""
 
-    public fun ifErrorTextNotEmpty(fn: (text: String) -> String) = if (errorText.isNotEmpty()) fn(errorText) else ""
+    fun ifErrorTextNotEmpty(fn: (text: String) -> String) = if (errorText.isNotEmpty()) fn(errorText) else ""
 }
 
 class CommandRunner {

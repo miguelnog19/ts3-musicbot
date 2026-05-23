@@ -2,7 +2,7 @@ package ts3musicbot.services
 
 import kotlinx.coroutines.Dispatchers.Default
 import kotlinx.coroutines.Dispatchers.IO
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -50,6 +50,7 @@ import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeFormatterBuilder
 import java.time.temporal.ChronoField
 import java.util.Base64
+import kotlin.time.Duration.Companion.seconds
 
 class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIFY) {
     private val defaultMarket = "US"
@@ -103,8 +104,7 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
         }
 
         lateinit var token: String
-        val tokenJob = Job()
-        withContext(IO + tokenJob) {
+        withContext(IO) {
             while (true) {
                 val data = getData()
                 // check http return code
@@ -113,19 +113,19 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                         try {
                             val tokenData = JSONObject(data.data.data)
                             token = tokenData.getString("access_token")
-                            tokenJob.complete()
                             return@withContext
                         } catch (e: JSONException) {
+                            e.printStackTrace()
                             // JSON broken, try getting the data again
                             println("Failed JSON:\n${data.data}\n")
-                            println("Failed to get data from JSON, trying again...")
+                            this.cancel("Failed to get data from JSON")
                         }
                     }
 
                     HTTP_TOO_MANY_REQUESTS -> {
                         println("Too many requests! Waiting for ${data.data} seconds.")
                         // wait for given time before next request.
-                        delay(data.data.data.toLong() * 1000)
+                        delay(data.data.data.toLong().seconds)
                     }
 
                     HttpURLConnection.HTTP_BAD_REQUEST -> {
@@ -140,11 +140,11 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
     }
 
     fun getReleaseDate(
-        release_date_precision: String,
+        releaseDatePrecision: String,
         releaseDateString: String,
     ): ReleaseDate {
         val formatter =
-            when (release_date_precision) {
+            when (releaseDatePrecision) {
                 "day" -> {
                     DateTimeFormatter.ofPattern("yyyy-MM-dd")
                 }
@@ -340,7 +340,7 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
 
                         val artistName = decode(artistData.getString("name"))
                         val followers = artistData.getJSONObject("followers").getLong("total")
-                        var genres =
+                        val genres =
                             artistData.getJSONArray("genres").map {
                                 it as String
                                 it
@@ -437,8 +437,7 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
             resultsData.add(searchData(search.first, search.second))
         }
         for (result in resultsData) {
-            val searchJob = Job()
-            withContext(IO + searchJob) {
+            withContext(IO) {
                 var searchData = result
                 while (true) {
                     // check http return code
@@ -447,12 +446,12 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                             // token is valid, try parsing data
                             try {
                                 val resultData = JSONObject(searchData.data.data)
-                                withContext(Default + searchJob) {
+                                withContext(Default) {
                                     parseResults(resultData)
                                 }
-                                searchJob.complete()
                                 return@withContext
                             } catch (e: JSONException) {
+                                e.printStackTrace()
                                 // JSON broken, try getting the data again
                                 println("Failed JSON:\n${searchData.data}\n")
                                 println("Failed to get data from JSON, trying again...")
@@ -468,14 +467,13 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
 
                         HttpURLConnection.HTTP_BAD_REQUEST -> {
                             println("Error ${searchData.code}! Bad request!!")
-                            searchJob.complete()
                             return@withContext
                         }
 
                         HTTP_TOO_MANY_REQUESTS -> {
                             println("Too many requests! Waiting for ${searchData.data.data} seconds.")
                             // wait for given time before next request.
-                            delay(searchData.data.data.toLong() * 1000)
+                            delay(searchData.data.data.toLong().seconds)
                             searchData = searchData(link = result.link)
                         }
 
@@ -521,8 +519,7 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
             )
         }
 
-        val playlistJob = Job()
-        withContext(IO + playlistJob) {
+        withContext(IO) {
             while (true) {
                 val playlistData = fetchPlaylistData(playlistLink)
                 // check http return code
@@ -531,12 +528,12 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                         try {
                             val data = JSONObject(playlistData.data.data)
                             playlist = parsePlaylistData(data)
-                            playlistJob.complete()
                             return@withContext
                         } catch (e: JSONException) {
+                            e.printStackTrace()
                             // JSON broken, try getting the data again
                             println("Failed JSON:\n${playlistData.data}\n")
-                            println("Failed to get data from JSON, trying again...")
+                            this.cancel("Failed to get data from JSON")
                         }
                     }
 
@@ -548,24 +545,22 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                     HTTP_TOO_MANY_REQUESTS -> {
                         println("Too many requests! Waiting for ${playlistData.data} seconds.")
                         // wait for given time before next request.
-                        delay(playlistData.data.data.toLong() * 1000)
+                        delay(playlistData.data.data.toLong().seconds)
                     }
 
                     HttpURLConnection.HTTP_NOT_FOUND -> {
                         println("Error 404! $playlistLink not found!")
                         playlist = Playlist(link = playlistLink)
-                        playlistJob.complete()
                         return@withContext
                     }
 
                     HttpURLConnection.HTTP_BAD_REQUEST -> {
                         println("Error ${playlistData.code}! Bad request!!")
                         playlist = Playlist(link = playlistLink)
-                        playlistJob.complete()
                         return@withContext
                     }
 
-                    else -> println("HTTP ERROR! CODE ${playlistData.code}")
+                    else -> this.cancel("HTTP ERROR! CODE ${playlistData.code}")
                 }
             }
         }
@@ -608,8 +603,7 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                     } else {
                         for (item in items) {
                             item as JSONObject
-                            val itemJob = Job()
-                            withContext(IO + itemJob) {
+                            withContext(IO) {
                                 try {
                                     if (item.get("track") != null) {
                                         if (item.getJSONObject("track").get("id") != null) {
@@ -704,34 +698,30 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                                                         ),
                                                     )
                                                 }
-                                                itemJob.complete()
                                             } else {
                                                 println("This is a local track. Skipping...")
                                                 playlistLength -= 1
-                                                itemJob.complete()
                                             }
                                         } else {
                                             println("Track id is null. Skipping...")
                                             playlistLength -= 1
-                                            itemJob.complete()
                                         }
                                     } else {
                                         println("Track data null. Skipping...")
                                         playlistLength -= 1
-                                        itemJob.complete()
                                     }
                                 } catch (e: JSONException) {
+                                    e.printStackTrace()
+                                    println("Failed to parse JSON from item:\n$item")
                                     println("Track couldn't be parsed due to JSONException. Skipping...")
                                     playlistLength -= 1
-                                    itemJob.complete()
                                 }
                             }
                         }
                     }
                 }
 
-                val itemJob = Job()
-                withContext(IO + itemJob) {
+                withContext(IO) {
                     while (true) {
                         val itemData = fetchItemData()
                         when (itemData.code.code) {
@@ -740,12 +730,12 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                                     val item = JSONObject(itemData.data.data)
                                     parseItems(item.getJSONArray("items"))
                                     listOffset += 100
-                                    itemJob.complete()
                                     return@withContext
                                 } catch (e: JSONException) {
+                                    e.printStackTrace()
                                     // JSON broken, try getting the data again
                                     println("Failed JSON:\n${itemData.data}\n")
-                                    println("Failed to get data from JSON, trying again...")
+                                    this.cancel("Failed to get data from JSON")
                                 }
                             }
 
@@ -757,18 +747,17 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                             HTTP_TOO_MANY_REQUESTS -> {
                                 println("Too many requests! Waiting for ${itemData.data} seconds.")
                                 // wait for given time before next request.
-                                delay(itemData.data.data.toLong() * 1000)
+                                delay(itemData.data.data.toLong().seconds)
                             }
 
-                            else -> println("HTTP ERROR! CODE: ${itemData.code}")
+                            else -> this.cancel("HTTP ERROR! CODE: ${itemData.code}")
                         }
                     }
                 }
             }
         }
 
-        val playlistJob = Job()
-        withContext(IO + playlistJob) {
+        withContext(IO) {
             while (true) {
                 val playlistData = fetchPlaylistData(playlistLink)
                 // check http return code
@@ -777,12 +766,12 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                         try {
                             val playlist = JSONObject(playlistData.data.data)
                             parsePlaylistData(playlist)
-                            playlistJob.complete()
                             return@withContext
                         } catch (e: JSONException) {
+                            e.printStackTrace()
                             // JSON broken, try getting the data again
                             println("Failed JSON:\n${playlistData.data}\n")
-                            println("Failed to get data from JSON, trying again...")
+                            this.cancel("Failed to get data from JSON")
                         }
                     }
 
@@ -793,17 +782,16 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
 
                     HttpURLConnection.HTTP_NOT_FOUND -> {
                         println("Error 404! $playlistLink not found!")
-                        playlistJob.complete()
                         return@withContext
                     }
 
                     HTTP_TOO_MANY_REQUESTS -> {
                         println("Too many requests! Waiting for ${playlistData.data} seconds.")
                         // wait for given time before next request.
-                        delay(playlistData.data.data.toLong() * 1000)
+                        delay(playlistData.data.data.toLong().seconds)
                     }
 
-                    else -> println("HTTP ERROR! CODE: ${playlistData.code}")
+                    else -> this.cancel("HTTP ERROR! CODE: ${playlistData.code}")
                 }
             }
         }
@@ -839,15 +827,12 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                 fetchAlbumTracks(albumLink),
                 albumLink,
                 Genres(
-                    data.getJSONArray("genres").map {
-                        if (it is String) it else ""
-                    },
+                    data.getJSONArray("genres").map { it as? String ?: "" },
                 ),
             )
         }
 
-        val albumJob = Job()
-        withContext(IO + albumJob) {
+        withContext(IO) {
             while (true) {
                 val albumData = fetchAlbumData(albumLink)
                 // check http return code
@@ -856,12 +841,12 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                         try {
                             val data = JSONObject(albumData.data.data)
                             album = parseAlbumData(data)
-                            albumJob.complete()
                             return@withContext
                         } catch (e: JSONException) {
+                            e.printStackTrace()
                             // JSON broken, try getting the data again
                             println("Failed JSON:\n${albumData.data}\n")
-                            println("Failed to get data from JSON, trying again...")
+                            this.cancel("Failed to get data from JSON")
                         }
                     }
 
@@ -873,21 +858,19 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                     HttpURLConnection.HTTP_NOT_FOUND -> {
                         println("Error 404! $albumLink not found!")
                         album = Album()
-                        albumJob.complete()
                         return@withContext
                     }
 
                     HttpURLConnection.HTTP_BAD_REQUEST -> {
                         println("Error ${albumData.code}! Bad request!!")
                         album = Album()
-                        albumJob.complete()
                         return@withContext
                     }
 
                     HTTP_TOO_MANY_REQUESTS -> {
                         println("Too many requests! Waiting for ${albumData.data} seconds.")
                         // wait for given time before next request.
-                        delay(albumData.data.data.toLong() * 1000)
+                        delay(albumData.data.data.toLong().seconds)
                     }
 
                     else -> println("HTTP ERROR! CODE ${albumData.code}")
@@ -993,8 +976,7 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                     }
                 }
 
-                val albumTrackJob = Job()
-                withContext(IO + albumTrackJob) {
+                withContext(IO) {
                     while (true) {
                         val albumTrackData = fetchAlbumTrackData()
                         when (albumTrackData.code.code) {
@@ -1005,12 +987,12 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                                         parseItems(tracks.getJSONArray("items"))
                                     }
                                     listOffset += 20
-                                    albumTrackJob.complete()
                                     return@withContext
                                 } catch (e: JSONException) {
+                                    e.printStackTrace()
                                     // JSON broken, try getting the data again
                                     println("Failed JSON:\n${albumTrackData.data}\n")
-                                    println("Failed to get data from JSON, trying again...")
+                                    this.cancel("Failed to get data from JSON")
                                 }
                             }
 
@@ -1022,7 +1004,7 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                             HTTP_TOO_MANY_REQUESTS -> {
                                 println("Too many requests! Waiting for ${albumTrackData.data} seconds.")
                                 // wait for given time before next request.
-                                delay(albumTrackData.data.data.toLong() * 1000)
+                                delay(albumTrackData.data.data.toLong().seconds)
                             }
 
                             else -> println("HTTP ERROR! CODE ${albumTrackData.code}")
@@ -1032,8 +1014,7 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
             }
         }
 
-        val albumJob = Job()
-        withContext(IO + albumJob) {
+        withContext(IO){
             while (true) {
                 val albumData = fetchAlbumData(albumLink)
                 // check http return code
@@ -1042,12 +1023,12 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                         try {
                             val data = JSONObject(albumData.data.data)
                             parseAlbumData(data)
-                            albumJob.complete()
                             return@withContext
                         } catch (e: JSONException) {
+                            e.printStackTrace()
                             // JSON broken, try getting the data again
                             println("Failed JSON:\n${albumData.data}\n")
-                            println("Failed to get data from JSON, trying again...")
+                            this.cancel("Failed to get data from JSON")
                         }
                     }
 
@@ -1058,14 +1039,13 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
 
                     HttpURLConnection.HTTP_NOT_FOUND -> {
                         println("Error 404! $albumLink not found!")
-                        albumJob.complete()
                         return@withContext
                     }
 
                     HTTP_TOO_MANY_REQUESTS -> {
                         println("Too many requests! Waiting for ${albumData.data} seconds.")
                         // wait for given time before next request.
-                        delay(albumData.data.data.toLong() * 1000)
+                        delay(albumData.data.data.toLong().seconds)
                     }
 
                     else -> println("HTTP ERROR! CODE ${albumData.code}")
@@ -1146,9 +1126,8 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                 if (trackData.getBoolean("is_playable")) {
                     true
                 } else {
-                    val trackJob = Job()
                     var playable: Boolean
-                    withContext(IO + trackJob) {
+                    withContext(IO) {
                         while (true) {
                             val id = trackData.getString("id")
                             val trackData2 =
@@ -1165,12 +1144,12 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                                         val availableMarkets = data.getJSONArray("available_markets")
                                         playable = availableMarkets.contains(market) ||
                                             availableMarkets.contains(defaultMarket)
-                                        trackJob.complete()
                                         return@withContext
                                     } catch (e: JSONException) {
+                                        e.printStackTrace()
                                         // JSON broken, try getting the data again
                                         println("Failed JSON:\n${trackData2.data}\n")
-                                        println("Failed to get data from JSON, trying again...")
+                                        this.cancel("Failed to get data from JSON")
                                     }
                                 }
 
@@ -1181,21 +1160,19 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                                 HttpURLConnection.HTTP_NOT_FOUND -> {
                                     println("Error 404! $trackLink not found!")
                                     playable = false
-                                    trackJob.complete()
                                     return@withContext
                                 }
 
                                 HTTP_TOO_MANY_REQUESTS -> {
                                     println("Too many requests! Waiting for ${trackData2.data} seconds.")
                                     // wait for given time before next request.
-                                    delay(trackData2.data.data.toLong() * 1000)
+                                    delay(trackData2.data.data.toLong().seconds)
                                 }
 
                                 else -> println("HTTP ERROR! CODE: ${trackData2.code}")
                             }
                         }
                     }
-                    trackJob.join()
                     playable
                 }
             if (isPlayable) {
@@ -1207,9 +1184,8 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
         }
 
         lateinit var track: Track
-        val trackJob = Job()
         var isRetry = false
-        withContext(IO + trackJob) {
+        withContext(IO) {
             while (true) {
                 val trackData = fetchTrackData(trackLink, market.ifEmpty { defaultMarket })
                 when (trackData.code.code) {
@@ -1218,12 +1194,12 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                             withContext(Default) {
                                 track = parseData(JSONObject(trackData.data.data))
                             }
-                            trackJob.complete()
                             return@withContext
                         } catch (e: JSONException) {
+                            e.printStackTrace()
                             // JSON broken, try getting the data again
                             println("Failed JSON:\n${trackData.data}\n")
-                            println("Failed to get data from JSON, trying again...")
+                            this.cancel("Failed to get data from JSON")
                         }
                     }
 
@@ -1234,7 +1210,6 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                     HttpURLConnection.HTTP_NOT_FOUND -> {
                         println("Error 404! $trackLink not found!")
                         track = Track()
-                        trackJob.complete()
                         return@withContext
                     }
 
@@ -1242,7 +1217,6 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                         println("Error ${trackData.code}! Bad request!!")
                         track = Track()
                         if (isRetry) {
-                            trackJob.complete()
                             return@withContext
                         } else {
                             isRetry = true
@@ -1253,7 +1227,7 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                     HTTP_TOO_MANY_REQUESTS -> {
                         println("Too many requests! Waiting for ${trackData.data} seconds.")
                         // wait for given time before next request.
-                        delay(trackData.data.data.toLong() * 1000)
+                        delay(trackData.data.data.toLong().seconds)
                     }
 
                     else -> println("HTTP ERROR! CODE: ${trackData.code}")
@@ -1305,6 +1279,7 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
             )
         }
 
+        /*
         fun fetchRelatedArtists(): Response {
             val linkBuilder = StringBuilder()
             linkBuilder.append("$apiURI/artists/")
@@ -1316,6 +1291,7 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                 extraProperties = ExtraProperties(mapOf(Pair("Authorization", "Bearer $accessToken"))),
             )
         }
+         */
 
         suspend fun parseData(
             artistData: JSONObject,
@@ -1385,8 +1361,7 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                     },
                 )
                 if (!currentAlbumsData.isNull("next")) {
-                    val albumsJob = Job()
-                    withContext(IO + albumsJob) {
+                    withContext(IO) {
                         while (true) {
                             val albumsResponse = fetchAlbums(offset)
                             when (albumsResponse.code.code) {
@@ -1396,15 +1371,16 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                                         offset += 50
                                         return@withContext
                                     } catch (e: JSONException) {
+                                        e.printStackTrace()
                                         // JSON broken, try getting the data again
                                         println("Failed JSON:\n${albumsResponse.data}\n")
-                                        println("Failed to get data from JSON, trying again...")
+                                        this.cancel("Failed to get data from JSON")
                                     }
                                 }
 
                                 HTTP_TOO_MANY_REQUESTS -> {
                                     println("Too many requests! Waiting for ${albumsResponse.data} seconds.")
-                                    delay(albumsResponse.data.data.toLong() * 1000)
+                                    delay(albumsResponse.data.data.toLong().seconds)
                                 }
 
                                 HttpURLConnection.HTTP_UNAUTHORIZED -> updateToken()
@@ -1423,10 +1399,7 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
             //     val link = Link(artist.getJSONObject("external_urls").getString("spotify"))
             //     related.add(Artist(artistName, link))
             // }
-            val genres: List<String> =
-                artistData.getJSONArray("genres").map {
-                    if (it is String) it else ""
-                }
+            val genres: List<String> = artistData.getJSONArray("genres").map { it as? String ?: "" }
             val followers = Followers(artistData.getJSONObject("followers").getLong("total"))
             return Artist(
                 name,
@@ -1442,8 +1415,7 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
         }
 
         lateinit var artist: Artist
-        val artistJob = Job()
-        withContext(IO + artistJob) {
+        withContext(IO) {
             while (true) {
                 val artistData = fetchArtistData()
                 when (artistData.code.code) {
@@ -1460,9 +1432,10 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                                             }
                                             break@topTracks
                                         } catch (e: JSONException) {
+                                            e.printStackTrace()
                                             // JSON broken, try getting the data again
                                             println("Failed JSON:\n${topTracksData.data}\n")
-                                            println("Failed to get data from JSON, trying again...")
+                                            this.cancel("Failed to get data from JSON")
                                         }
                                     }
 
@@ -1473,7 +1446,7 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                                     HTTP_TOO_MANY_REQUESTS -> {
                                         println("Too many requests! Waiting for ${topTracksData.data} seconds.")
                                         // wait for given time before next request.
-                                        delay(topTracksData.data.data.toLong() * 1000)
+                                        delay(topTracksData.data.data.toLong().seconds)
                                     }
 
                                     else -> println("HTTP ERROR! CODE: ${topTracksData.code}")
@@ -1490,16 +1463,17 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                                             }
                                             break@albums
                                         } catch (e: JSONException) {
+                                            e.printStackTrace()
                                             // JSON broken, try getting the data again
                                             println("Failed JSON:\n${albumsData.data}\n")
-                                            println("Failed to get data from JSON, trying again...")
+                                            this.cancel("Failed to get data from JSON")
                                         }
                                     }
 
                                     HttpURLConnection.HTTP_UNAUTHORIZED -> updateToken()
                                     HTTP_TOO_MANY_REQUESTS -> {
                                         println("Too many requests! Waiting for ${albumsData.data} seconds.")
-                                        delay(albumsData.data.data.toLong() * 1000)
+                                        delay(albumsData.data.data.toLong().seconds)
                                     }
 
                                     else -> println("HTTP ERROR! CODE: ${albumsData.code}")
@@ -1538,33 +1512,31 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                             // }
                             // artist = parseData(JSONObject(artistData.data.data), topTracks, albums, relatedArtists)
                             artist = parseData(JSONObject(artistData.data.data), topTracks, albums)
-                            artistJob.complete()
                             return@withContext
                         } catch (e: JSONException) {
+                            e.printStackTrace()
                             // JSON broken, try getting the data again
                             println("Failed JSON:\n${artistData.data}\n")
-                            println("Failed to get data from JSON, trying again...")
+                            this.cancel("Failed to get data from JSON")
                         }
                     }
 
                     HttpURLConnection.HTTP_NOT_FOUND -> {
                         println("Error 404! $artistLink not found!")
                         artist = Artist()
-                        artistJob.complete()
                         return@withContext
                     }
 
                     HTTP_TOO_MANY_REQUESTS -> {
                         println("Too many requests! Waiting for ${artistData.data} seconds.")
                         // wait for given time before next request.
-                        delay(artistData.data.data.toLong() * 1000)
+                        delay(artistData.data.data.toLong().seconds)
                     }
 
                     HttpURLConnection.HTTP_UNAUTHORIZED -> updateToken()
                     HttpURLConnection.HTTP_BAD_REQUEST -> {
                         println("Error ${artistData.code}! Bad request!!")
                         artist = Artist()
-                        artistJob.complete()
                         return@withContext
                     }
 
@@ -1601,8 +1573,7 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
 
         suspend fun parseUserData(userData: JSONObject): User {
             val playlists = ArrayList<Playlist>()
-            val userPlaylistsJob = Job()
-            withContext(IO + userPlaylistsJob) {
+            withContext(IO) {
                 while (true) {
                     val playlistsData = fetchUserPlaylistsData()
                     when (playlistsData.code.code) {
@@ -1633,11 +1604,11 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                                             TrackList(List(it.getJSONObject("tracks").getInt("total")) { Track() }),
                                             Link(it.getJSONObject("external_urls").getString("spotify"), it.getString("id")),
                                         )
-                                        userPlaylistsJob.complete()
                                         return@withContext
                                     },
                                 )
                             } catch (e: JSONException) {
+                                e.printStackTrace()
                                 // JSON broken, try getting the data again
                                 println("Failed JSON:\n${playlistsData.data}\n")
                                 println("Failed to get data from JSON, trying again...")
@@ -1651,7 +1622,7 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                         HTTP_TOO_MANY_REQUESTS -> {
                             println("Too many requests! Waiting for ${playlistsData.data} seconds.")
                             // wait for given time before next request.
-                            delay(playlistsData.data.data.toLong() * 1000)
+                            delay(playlistsData.data.data.toLong().seconds)
                         }
 
                         else -> println("HTTP ERROR! CODE: ${playlistsData.code}")
@@ -1668,8 +1639,7 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
             )
         }
 
-        val userJob = Job()
-        withContext(IO + userJob) {
+        withContext(IO) {
             while (true) {
                 val userData = fetchUserData()
                 // check response code
@@ -1678,12 +1648,12 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                         try {
                             val data = JSONObject(userData.data.data)
                             user = parseUserData(data)
-                            userJob.complete()
                             return@withContext
                         } catch (e: JSONException) {
+                            e.printStackTrace()
                             // JSON broken, try getting the data again
                             println("Failed JSON:\n${userData.data}\n")
-                            println("Failed to get data from JSON, trying again...")
+                            this.cancel("Failed JSON")
                         }
                     }
 
@@ -1692,14 +1662,17 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                     }
 
                     HttpURLConnection.HTTP_NOT_FOUND -> {
-                        println("Error 404! $userLink not found!")
+                        val msg = "Error 404! $userLink not found!"
+                        println(msg)
                         user = User()
+                        this.cancel(msg)
+                        return@withContext
                     }
 
                     HTTP_TOO_MANY_REQUESTS -> {
                         println("Too many requests! Waiting for ${userData.data} seconds.")
                         // wait for given time before next request.
-                        delay(userData.data.data.toLong() * 1000)
+                        delay(userData.data.data.toLong().seconds)
                     }
 
                     else -> println("HTTP ERROR! CODE: ${userData.code}")
@@ -1762,8 +1735,7 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                     }
                     if (!episodesData.isNull("next")) {
                         offset += 50
-                        val episodesJob = Job()
-                        withContext(episodesJob + IO) {
+                        withContext(IO) {
                             while (true) {
                                 val data = fetchEpisodesData(offset)
                                 when (data.code.code) {
@@ -1771,13 +1743,12 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                                         try {
                                             val episodeData = JSONObject(data.data.data)
                                             items = episodeData.getJSONArray("items")
-                                            episodesJob.complete()
                                             return@withContext
                                         } catch (e: JSONException) {
                                             // JSON broken, try getting the data again
-                                            println(e)
+                                            e.printStackTrace()
                                             println("Failed JSON:\n${data.data}\n")
-                                            println("Failed to get data from JSON")
+                                            this.cancel("Failed to get data from JSON")
                                             return@withContext
                                         }
                                     }
@@ -1787,14 +1758,16 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                                     }
 
                                     HttpURLConnection.HTTP_NOT_FOUND -> {
-                                        println("ERROR 404!\nThe link \"${data.link}\" couldn't be found.")
+                                        val msg = "ERROR 404!\nThe link \"${data.link}\" couldn't be found."
+                                        println(msg)
+                                        this.cancel(msg)
                                         return@withContext
                                     }
 
                                     HTTP_TOO_MANY_REQUESTS -> {
                                         println("Too many requests! Waiting for ${data.data} seconds.")
                                         // wait for given time before next request.
-                                        delay(data.data.data.toLong() * 1000)
+                                        delay(data.data.data.toLong().seconds)
                                     }
 
                                     else -> println("HTTP ERROR! CODE: ${data.code}")
@@ -1806,8 +1779,7 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                 return EpisodeList(episodes)
             }
 
-            val episodeJob = Job()
-            withContext(IO + episodeJob) {
+            withContext(IO) {
                 while (true) {
                     val episodesData = fetchEpisodesData()
                     when (episodesData.code.code) {
@@ -1815,12 +1787,11 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                             try {
                                 val data = JSONObject(episodesData.data.data)
                                 episodeList = parseEpisodesData(data)
-                                episodeJob.complete()
                                 return@withContext
                             } catch (e: JSONException) {
-                                println(e)
+                                e.printStackTrace()
                                 println("Failed JSON:\n${episodesData.data}\n")
-                                println("Failed to get data from JSON")
+                                this.cancel("Failed to get data from JSON")
                                 return@withContext
                             }
                         }
@@ -1830,14 +1801,16 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                         }
 
                         HttpURLConnection.HTTP_NOT_FOUND -> {
-                            println("ERROR 404!\nThe link \"${episodesData.link}\" couldn't be found.")
+                            val msg = "ERROR 404!\nThe link \"${episodesData.link}\" couldn't be found."
+                            println(msg)
+                            this.cancel(msg)
                             return@withContext
                         }
 
                         HTTP_TOO_MANY_REQUESTS -> {
                             println("Too many requests! Waiting for ${episodesData.data} seconds.")
                             // wait for given time before next request.
-                            delay(episodesData.data.data.toLong() * 1000)
+                            delay(episodesData.data.data.toLong().seconds)
                         }
 
                         else -> println("HTTP ERROR! CODE: ${episodesData.code}")
@@ -1859,8 +1832,7 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
             )
         }
 
-        val showJob = Job()
-        withContext(IO + showJob) {
+        withContext(IO) {
             while (true) {
                 val showData = fetchShowData(showLink)
                 when (showData.code.code) {
@@ -1868,12 +1840,11 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                         try {
                             val data = JSONObject(showData.data.data)
                             show = parseShowData(data)
-                            showJob.complete()
                             return@withContext
                         } catch (e: JSONException) {
-                            println(e)
+                            e.printStackTrace()
                             println("Failed JSON:\n${showData.data}\n")
-                            println("Failed to get data from JSON")
+                            this.cancel("Failed to get data from JSON")
                             return@withContext
                         }
                     }
@@ -1883,23 +1854,25 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                     }
 
                     HttpURLConnection.HTTP_NOT_FOUND -> {
-                        println("Error 404! $showLink not found!")
+                        val msg = "Error 404! $showLink not found!"
+                        println(msg)
                         show = Show()
-                        showJob.complete()
+                        this.cancel(msg)
                         return@withContext
                     }
 
                     HttpURLConnection.HTTP_BAD_REQUEST -> {
-                        println("Error ${showData.code}! Bad request!!")
+                        val msg = "Error ${showData.code}! Bad request!!"
+                        println(msg)
                         show = Show()
-                        showJob.complete()
+                        this.cancel(msg)
                         return@withContext
                     }
 
                     HTTP_TOO_MANY_REQUESTS -> {
                         println("Too many requests! Waiting for ${showData.data} seconds.")
                         // wait for given time before next request.
-                        delay(showData.data.data.toLong() * 1000)
+                        delay(showData.data.data.toLong().seconds)
                     }
 
                     else -> println("HTTP ERROR! CODE: ${showData.code}")
@@ -1934,8 +1907,7 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
             )
         }
 
-        val episodeJob = Job()
-        withContext(IO + episodeJob) {
+        withContext(IO) {
             while (true) {
                 val episodeData = fetchEpisodeData()
                 when (episodeData.code.code) {
@@ -1943,12 +1915,12 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                         try {
                             val data = JSONObject(episodeData.data.data)
                             episode = parseEpisodeData(data)
-                            episodeJob.complete()
                             return@withContext
                         } catch (e: JSONException) {
+                            e.printStackTrace()
                             // JSON broken, try getting the data again
                             println("Failed JSON:\n${episodeData.data}\n")
-                            println("Failed to get data from JSON, trying again...")
+                            this.cancel("Failed to get data from JSON")
                         }
                     }
 
@@ -1957,23 +1929,25 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
                     }
 
                     HttpURLConnection.HTTP_NOT_FOUND -> {
-                        println("Error 404! $episodeLink not found!")
+                        val msg = "Error 404! $episodeLink not found!"
+                        println(msg)
                         episode = Episode()
-                        episodeJob.complete()
+                        this.cancel(msg)
                         return@withContext
                     }
 
                     HttpURLConnection.HTTP_BAD_REQUEST -> {
-                        println("Error ${episodeData.code}! Bad request!!")
+                        val msg = "Error ${episodeData.code}! Bad request!!"
+                        println(msg)
                         episode = Episode()
-                        episodeJob.complete()
+                        this.cancel(msg)
                         return@withContext
                     }
 
                     HTTP_TOO_MANY_REQUESTS -> {
                         println("Too many requests! Waiting for ${episodeData.data} seconds.")
                         // wait for given time before next request.
-                        delay(episodeData.data.data.toLong() * 1000)
+                        delay(episodeData.data.data.toLong().seconds)
                     }
 
                     else -> println("HTTP ERROR! CODE: ${episodeData.code}")
@@ -1995,6 +1969,7 @@ class Spotify(private val botSettings: BotSettings) : Service(ServiceType.SPOTIF
         return try {
             LinkType.valueOf(type.uppercase())
         } catch (e: IllegalArgumentException) {
+            e.printStackTrace()
             println("Link type \"$type\" in \"$link\" is not supported")
             LinkType.OTHER
         }
